@@ -1,0 +1,48 @@
+# Local agent/editor state
+.agents/
+.codex/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Test/build/cache output
+tests
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Model and app caches
+.cache/
+models_cache/
+*.db
+
+# Generated data
+data/raw/pdf/*
+!data/raw/pdf/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/eval/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Other files
+AGENTS.md
+plan-rag.md
+report-rag.txt
+
