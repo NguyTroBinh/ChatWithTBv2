@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chat With TB</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">Chat With TB</div>
+      <button class="nav-item active" type="button">Đoạn chat mới</button>
+      <button class="nav-item" type="button">Tìm kiếm đoạn chat</button>
+      <button class="nav-item" type="button">Library</button>
+      <div class="upload-panel">
+        <div class="panel-title">Tài liệu</div>
+        <form id="upload-form">
+          <label class="upload-target">
+            <span id="file-label">Chọn PDF</span>
+            <input id="pdf-file" name="files" type="file" accept="application/pdf" multiple />
+          </label>
+          <button class="upload-button" type="submit">Upload</button>
+        </form>
+        <div id="upload-status" class="status"></div>
+      </div>
+      <div class="recent">
+        <div class="panel-title">Gần đây</div>
+        <div>Adaptive chunking</div>
+        <div>Vietnamese embedding</div>
+        <div>Naive RAG pipeline</div>
+      </div>
+    </aside>
+
+    <main class="chat-shell">
+      <section id="messages" class="messages">
+        <div class="empty-state">Khi bạn sẵn sàng là chúng ta có thể bắt đầu.</div>
+      </section>
+
+      <div class="composer-wrap">
+        <form id="chat-form" class="composer">
+          <button id="attach-button" class="round-button" type="button" aria-label="Upload PDF">+</button>
+          <input id="composer-files" type="file" accept="application/pdf" multiple hidden />
+          <textarea id="query" rows="1" placeholder="Hỏi bất kỳ điều gì về tài liệu của bạn"></textarea>
+          <button class="send-button" type="submit">Gửi</button>
+        </form>
+        <div id="active-documents" class="scope-status"></div>
+        <div class="disclaimer">TB có thể mắc lỗi. Hãy kiểm tra các thông tin quan trọng.</div>
+      </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
