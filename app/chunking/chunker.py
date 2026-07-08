@@ -6,7 +6,8 @@ from typing import List, Dict
 MIN_TOKENS = 200       
 IDEAL_TOKENS = 700     
 MAX_TOKENS = 1200      
-HARD_CAP = 1500   
+HARD_CAP = 1500  
+TOKEN_COUNT_WINDOW_CHARS = 5000 
 
 class ChunkingService:
     def __init__(self):
@@ -50,14 +51,25 @@ class ChunkingService:
         )
 
         # Fallback Splitter
-        self.fallback_splitter = RecursiveCharacterTextSplitter.from_huggingface_tokenizer(
-            tokenizer=self.tokenizer,
+        self.fallback_splitter = RecursiveCharacterTextSplitter(
             chunk_size=HARD_CAP,
-            chunk_overlap=100
+            chunk_overlap=100,
+            length_function=self._count_tokens,
         )
 
     def _count_tokens(self, text: str) -> int:
-        return len(self.tokenizer.encode(text))
+        if not text:
+            return 0
+        
+        return sum(
+            len(
+                self.tokenizer.encode(
+                    text[start:start + TOKEN_COUNT_WINDOW_CHARS],
+                    add_special_tokens=False,
+                )
+            )
+            for start in range(0, len(text), TOKEN_COUNT_WINDOW_CHARS)
+        )
 
     def _preprocess_tables(self, text: str) -> str:
         """

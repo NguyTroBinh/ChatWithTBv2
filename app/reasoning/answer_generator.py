@@ -41,19 +41,20 @@ class AnswerGenerator:
         blocks = []
         for index, chunk in enumerate(chunks, start=1):
             metadata = chunk.get("metadata") or {}
+            file_name = chunk.get("file_name", "")
             page_start = metadata.get("page_start")
             page_end = metadata.get("page_end")
             if page_start and page_end and page_start != page_end:
-                pages = f"trang {page_start}-{page_end}"
+                source = f"{file_name}, trang {page_start}-{page_end}"
             elif page_start:
-                pages = f"trang {page_start}"
+                source = f"{file_name}, trang {page_start}"
             else:
-                pages = "không rõ trang"
+                source = file_name
 
             blocks.append(
                 "\n".join(
                     [
-                        f"[C{index}] {chunk.get('file_name', '')}, {pages}, chunk_id={metadata.get('chunk_id', chunk.get('id', ''))}",
+                        f"[Đoạn {index}] Nguồn: {source}",
                         chunk.get("content", ""),
                     ]
                 )
@@ -63,15 +64,11 @@ class AnswerGenerator:
     @staticmethod
     def _citations(chunks: list[dict]) -> list[dict]:
         citations = []
-        for index, chunk in enumerate(chunks, start=1):
-            metadata = chunk.get("metadata") or {}
-            citations.append(
-                {
-                    "id": f"C{index}",
-                    "fileName": chunk.get("file_name", ""),
-                    "pageStart": metadata.get("page_start"),
-                    "pageEnd": metadata.get("page_end"),
-                    "chunkId": metadata.get("chunk_id", chunk.get("id", "")),
-                }
-            )
+        seen = set()
+        for chunk in chunks:
+            file_name = chunk.get("file_name", "")
+            if not file_name or file_name in seen:
+                continue
+            seen.add(file_name)
+            citations.append({"fileName": file_name})
         return citations

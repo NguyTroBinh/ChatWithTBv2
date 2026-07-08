@@ -26,3 +26,5 @@ LLM_API_BASE = os.getenv("LLM_API_BASE", "")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "1"))
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4096"))
+LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "120"))
+LLM_THINK = os.getenv("LLM_THINK", "false").strip().lower() in {"1", "true", "yes", "on"}

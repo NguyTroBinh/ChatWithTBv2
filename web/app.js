@@ -185,11 +185,7 @@ function escapeHtml(text) {
 function renderCitations(citations) {
   const list = document.createElement("div");
   list.className = "citation-list";
-  list.textContent = citations
-    .map((citation) => {
-      const page = citation.pageStart ? `p.${citation.pageStart}` : "p.?";
-      return `[${citation.id}] ${citation.fileName} ${page}`;
-    })
-    .join("  ");
+  const fileNames = [...new Set(citations.map((citation) => citation.fileName).filter(Boolean))];
+  list.textContent = fileNames.length ? `Nguồn: ${fileNames.join(", ")}` : "";
   return list;
 }
