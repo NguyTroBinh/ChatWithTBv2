@@ -16,6 +16,7 @@ NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 CHUNK_VECTOR_INDEX = os.getenv("CHUNK_VECTOR_INDEX", "chunk_embedding")
+CHUNK_FULLTEXT_INDEX = os.getenv("CHUNK_FULLTEXT_INDEX", "chunk_text")
 
 # RERANKER_MODEL
 RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "AITeamVN/Vietnamese_Reranker")
@@ -28,3 +29,4 @@ LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "1"))
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4096"))
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "120"))
 LLM_THINK = os.getenv("LLM_THINK", "false").strip().lower() in {"1", "true", "yes", "on"}
+LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "").strip().lower()

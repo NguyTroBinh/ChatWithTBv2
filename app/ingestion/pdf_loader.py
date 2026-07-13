@@ -9,13 +9,31 @@ class PDFLoader:
         pdf_path = Path(pdf_file_path)
         self._validate_pdf_path(pdf_path)
 
-        # convert PDF to markdown
-        content = self.md.convert(str(pdf_path))
+        # Convert PDF to markdown, retaining page boundaries for citations.
+        markdown = self._page_aware_markdown(pdf_path)
+        if not markdown:
+            markdown = self.md.convert(str(pdf_path)).text_content
         
         self.processed_dir.mkdir(parents=True, exist_ok=True)
         output_path = self.processed_dir / f"{pdf_path.stem}.md"
-        output_path.write_text(content.text_content, encoding="utf-8")
-        return content.text_content
+        output_path.write_text(markdown, encoding="utf-8")
+        return markdown
+
+    @staticmethod
+    def _page_aware_markdown(pdf_path: Path) -> str:
+        try:
+            import pdfplumber
+
+            with pdfplumber.open(pdf_path) as pdf:
+                pages = [
+                    f"# Page {page_number}\n\n{text.strip()}"
+                    for page_number, page in enumerate(pdf.pages, start=1)
+                    if (text := page.extract_text()) and text.strip()
+                ]
+        except Exception:
+            return ""
+
+        return "\n\n".join(pages)
 
     @staticmethod
     def _load_converter():

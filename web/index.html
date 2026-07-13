@@ -3,51 +3,127 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#eef3f1" />
     <title>Chat With TB</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260708-1" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260710-3" />
   </head>
   <body>
-    <aside class="sidebar">
-      <div class="brand">Chat With TB</div>
-      <button class="nav-item active" type="button">Đoạn chat mới</button>
-      <button class="nav-item" type="button">Tìm kiếm đoạn chat</button>
-      <button class="nav-item" type="button">Library</button>
-      <div class="upload-panel">
-        <div class="panel-title">Tài liệu</div>
-        <form id="upload-form">
-          <label class="upload-target">
-            <span id="file-label">Chọn PDF</span>
-            <input id="pdf-file" name="files" type="file" accept="application/pdf" multiple />
-          </label>
-          <button class="upload-button" type="submit">Upload</button>
-        </form>
-        <div id="upload-status" class="status"></div>
-      </div>
-      <div class="recent">
-        <div class="panel-title">Gần đây</div>
-        <div>Adaptive chunking</div>
-        <div>Vietnamese embedding</div>
-        <div>Naive RAG pipeline</div>
-      </div>
-    </aside>
+    <div class="app-frame">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Chat With TB">
+          <span class="brand-mark">TB</span>
+          <span class="brand-copy">
+            <span class="brand-eyebrow">DOCUMENT QA WORKSPACE</span>
+            <span class="brand-name">Chat With TB</span>
+          </span>
+        </a>
 
-    <main class="chat-shell">
-      <section id="messages" class="messages">
-        <div class="empty-state">Khi bạn sẵn sàng là chúng ta có thể bắt đầu.</div>
-      </section>
+        <div class="topbar-actions">
+          <span class="system-status"><span class="status-dot"></span>Naive RAG ready</span>
+          <button id="new-chat" class="button button-secondary" type="button">
+            <span class="button-icon" aria-hidden="true">+</span>
+            Cuộc chat mới
+          </button>
+        </div>
+      </header>
 
-      <div class="composer-wrap">
-        <form id="chat-form" class="composer">
-          <button id="attach-button" class="round-button" type="button" aria-label="Upload PDF">+</button>
+      <main class="workspace">
+        <aside class="panel source-panel" aria-labelledby="source-title">
+          <div class="panel-header source-header">
+            <div>
+              <span class="panel-eyebrow">NGUỒN ĐẦU VÀO</span>
+              <h1 id="source-title">Tài liệu</h1>
+            </div>
+            <span id="source-count" class="count-badge">0</span>
+          </div>
+
+          <form id="upload-form" class="source-content">
+            <label id="dropzone" class="dropzone" for="pdf-file">
+              <span class="dropzone-icon" aria-hidden="true">+</span>
+              <span class="dropzone-title">Chọn hoặc kéo PDF vào đây</span>
+              <span class="dropzone-meta">Một hoặc nhiều tệp · tối đa tùy cấu hình server</span>
+              <input id="pdf-file" name="files" type="file" accept="application/pdf" multiple />
+            </label>
+
+            <div class="list-heading">
+              <span>Tệp đã chọn</span>
+              <span id="file-count" class="subtle-count">0</span>
+            </div>
+            <div id="file-list" class="file-list" aria-live="polite"></div>
+
+            <button id="upload-submit" class="button button-primary upload-submit" type="submit" disabled>
+              <span class="button-icon" aria-hidden="true">↑</span>
+              Nạp tài liệu
+            </button>
+            <div id="upload-status" class="inline-status" aria-live="polite"></div>
+          </form>
+
+          <div class="source-footer">
+            <span class="footer-label">Phạm vi hiện tại</span>
+            <strong id="source-scope">Chưa có tài liệu</strong>
+          </div>
+        </aside>
+
+        <section class="panel chat-panel" aria-labelledby="chat-title">
+          <div class="panel-header chat-header">
+            <div>
+              <span class="panel-eyebrow">HỎI ĐÁP</span>
+              <h2 id="chat-title">Cuộc trò chuyện</h2>
+            </div>
+            <span id="chat-state" class="header-state">Sẵn sàng</span>
+          </div>
+
+          <div id="messages" class="messages" aria-live="polite">
+            <div class="empty-state">
+              <span class="empty-mark">TB</span>
+              <h3>Hỏi về tài liệu của bạn</h3>
+              <p>Nạp PDF ở cột bên trái, sau đó đặt câu hỏi để bắt đầu.</p>
+              <div class="suggestions" aria-label="Câu hỏi gợi ý">
+                <button class="suggestion" type="button" data-query="Tóm tắt nội dung chính của tài liệu.">Tóm tắt tài liệu</button>
+                <button class="suggestion" type="button" data-query="Các điểm quan trọng cần lưu ý là gì?">Điểm quan trọng</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer-area">
+            <div id="active-documents" class="active-documents" aria-live="polite"></div>
+            <form id="chat-form" class="composer">
+              <button id="attach-button" class="icon-button" type="button" aria-label="Thêm tài liệu" title="Thêm tài liệu">
+                <span aria-hidden="true">+</span>
+              </button>
+              <textarea id="query" rows="1" placeholder="Đặt câu hỏi về tài liệu..." aria-label="Câu hỏi"></textarea>
+              <button id="send-button" class="send-button" type="submit">
+                Gửi <span aria-hidden="true">→</span>
+              </button>
+            </form>
+            <div class="composer-note">Thông tin trả lời được đối chiếu từ các đoạn trích bên phải.</div>
+          </div>
           <input id="composer-files" type="file" accept="application/pdf" multiple hidden />
-          <textarea id="query" rows="1" placeholder="Hỏi bất kỳ điều gì về tài liệu của bạn"></textarea>
-          <button class="send-button" type="submit">Gửi</button>
-        </form>
-        <div id="active-documents" class="scope-status"></div>
-        <div class="disclaimer">TB có thể mắc lỗi. Hãy kiểm tra các thông tin quan trọng.</div>
-      </div>
-    </main>
+        </section>
 
-    <script src="/static/app.js?v=20260708-1"></script>
+        <aside class="panel evidence-panel" aria-labelledby="evidence-title">
+          <div class="panel-header evidence-header">
+            <div>
+              <span class="panel-eyebrow">TRUY XUẤT</span>
+              <h2 id="evidence-title">Evidence</h2>
+            </div>
+            <span id="evidence-count" class="count-badge count-badge-light">0</span>
+          </div>
+
+          <div class="evidence-intro">
+            <span class="evidence-pulse"></span>
+            <span id="evidence-summary">Bằng chứng cho câu trả lời mới nhất</span>
+          </div>
+          <div id="evidence-list" class="evidence-list" aria-live="polite">
+            <div class="evidence-empty">
+              <span class="evidence-empty-icon" aria-hidden="true">⌕</span>
+              <p>Evidence sẽ xuất hiện sau câu hỏi đầu tiên.</p>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="/static/app.js?v=20260710-4"></script>
   </body>
 </html>

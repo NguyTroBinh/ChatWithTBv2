@@ -11,6 +11,8 @@ venv/
 .env
 .env.*
 !.env.example
+/scripts
+
 
 # Test/build/cache output
 tests

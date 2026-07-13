@@ -16,12 +16,11 @@ class AnswerGenerator:
         if not chunks:
             return {
                 "answer": "Chưa đủ thông tin trong tài liệu để trả lời câu hỏi này.",
-                "citations": [],
-                "usedEvidence": [],
+                "evidence": [],
                 "warnings": ["no_context"],
             }
 
-        citations = self._citations(chunks)
+        evidence = self._evidence(chunks)
         messages = [
             {"role": "system", "content": self.system_prompt},
             {
@@ -31,9 +30,8 @@ class AnswerGenerator:
         ]
         return {
             "answer": self.llm_client.generate(messages),
-            "citations": citations,
-            "usedEvidence": chunks,
-            "warnings": [],
+            "evidence": evidence,
+            "warnings": self._warnings(evidence),
         }
 
     @staticmethod
@@ -62,13 +60,27 @@ class AnswerGenerator:
         return "\n\n".join(blocks)
 
     @staticmethod
-    def _citations(chunks: list[dict]) -> list[dict]:
-        citations = []
-        seen = set()
+    def _evidence(chunks: list[dict]) -> list[dict]:
+        evidence = []
         for chunk in chunks:
-            file_name = chunk.get("file_name", "")
-            if not file_name or file_name in seen:
-                continue
-            seen.add(file_name)
-            citations.append({"fileName": file_name})
-        return citations
+            metadata = chunk.get("metadata") or {}
+            evidence.append(
+                {
+                    "chunkId": chunk.get("id") or metadata.get("chunk_id"),
+                    "documentId": metadata.get("document_id"),
+                    "fileName": chunk.get("file_name"),
+                    "pageStart": metadata.get("page_start"),
+                    "pageEnd": metadata.get("page_end"),
+                    "text": chunk.get("content", ""),
+                    "score": chunk.get("score"),
+                    "position": metadata.get("position"),
+                    "sectionPath": metadata.get("section_path"),
+                }
+            )
+        return evidence
+
+    @staticmethod
+    def _warnings(evidence: list[dict]) -> list[str]:
+        if any(item.get("pageStart") is None or item.get("pageEnd") is None for item in evidence):
+            return ["page_numbers_unavailable"]
+        return []

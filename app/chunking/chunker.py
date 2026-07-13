@@ -191,6 +191,7 @@ class ChunkingService:
     def _add_chunk(self, chunks_list, content, headers, file_name):
         enriched_content = self._inject_header_context(content, headers)
         page_start, page_end = self._extract_page_range(headers, enriched_content)
+        enriched_content = self._strip_page_markers(enriched_content)
         token_count = self._count_tokens(enriched_content)
         chunk_hash = self._hash_text(enriched_content)
         document_id = self._document_id(file_name)
@@ -202,8 +203,6 @@ class ChunkingService:
             "token_count": token_count,
             "page_start": page_start,
             "page_end": page_end,
-            "char_start": None,
-            "char_end": None,
             "chunk_hash": chunk_hash,
             "section_path": self._section_path(headers),
             "prev_chunk_id": None,
@@ -233,7 +232,11 @@ class ChunkingService:
         return chunks
 
     def _inject_header_context(self, content: str, metadata: Dict) -> str:
-        headers = [metadata[h] for h in ["H1", "H2", "H3"] if h in metadata]
+        headers = [
+            metadata[header]
+            for header in ["H1", "H2", "H3"]
+            if header in metadata and not self._is_page_header(metadata[header])
+        ]
         if not headers: return content
         context_str = " > ".join(headers)
         if context_str not in content[:300]: 
@@ -244,11 +247,11 @@ class ChunkingService:
     def _extract_page_range(headers: Dict, content: str) -> tuple[int | None, int | None]:
         pages = []
         for value in headers.values():
-            match = re.match(r"Page\s+(\d+)$", str(value).strip(), flags=re.IGNORECASE)
+            match = re.fullmatch(r"(?:Page|Trang)\s+(\d+)", str(value).strip(), flags=re.IGNORECASE)
             if match:
                 pages.append(int(match.group(1)))
 
-        for match in re.finditer(r"^#{1,6}\s*Page\s+(\d+)\s*$", content, flags=re.MULTILINE | re.IGNORECASE):
+        for match in re.finditer(r"^#{1,6}\s*(?:Page|Trang)\s+(\d+)\s*$", content, flags=re.MULTILINE | re.IGNORECASE):
             pages.append(int(match.group(1)))
 
         if not pages:
@@ -257,7 +260,24 @@ class ChunkingService:
 
     @staticmethod
     def _section_path(headers: Dict) -> str:
-        return " > ".join(str(headers[key]).strip() for key in ["H1", "H2", "H3"] if headers.get(key))
+        return " > ".join(
+            str(headers[key]).strip()
+            for key in ["H1", "H2", "H3"]
+            if headers.get(key) and not ChunkingService._is_page_header(headers[key])
+        )
+
+    @staticmethod
+    def _is_page_header(value: object) -> bool:
+        return bool(re.fullmatch(r"(?:Page|Trang)\s+\d+", str(value).strip(), flags=re.IGNORECASE))
+
+    @staticmethod
+    def _strip_page_markers(content: str) -> str:
+        return re.sub(
+            r"^#{1,6}\s*(?:Page|Trang)\s+\d+\s*\n?",
+            "",
+            content,
+            flags=re.MULTILINE | re.IGNORECASE,
+        ).strip()
 
     @staticmethod
     def _hash_text(text: str) -> str:

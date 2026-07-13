@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any
 from app.core.config import (
+    CHUNK_FULLTEXT_INDEX,
     CHUNK_VECTOR_INDEX,
     EMBEDDING_DIMENSION,
     NEO4J_DATABASE,
@@ -16,11 +17,13 @@ class Neo4jGraphStore:
         database: str = NEO4J_DATABASE,
         embedding_dimension: int = EMBEDDING_DIMENSION,
         vector_index_name: str = CHUNK_VECTOR_INDEX,
+        fulltext_index_name: str = CHUNK_FULLTEXT_INDEX,
     ):
         self.driver = driver
         self.database = database
         self.embedding_dimension = embedding_dimension
         self.vector_index_name = vector_index_name
+        self.fulltext_index_name = fulltext_index_name
 
     @classmethod
     def from_config(cls) -> "Neo4jGraphStore":
@@ -44,6 +47,7 @@ class Neo4jGraphStore:
                 self.embedding_dimension,
                 self.vector_index_name,
             )
+            session.execute_write(self._create_fulltext_index, self.fulltext_index_name)
 
     def save_document_chunks(
         self,
@@ -75,6 +79,10 @@ class Neo4jGraphStore:
     def _create_vector_index(cls, tx, embedding_dimension: int, index_name: str) -> None:
         tx.run(cls._vector_index_query(embedding_dimension, index_name))
 
+    @classmethod
+    def _create_fulltext_index(cls, tx, index_name: str) -> None:
+        tx.run(cls._fulltext_index_query(index_name))
+
     @staticmethod
     def _vector_index_query(embedding_dimension: int, index_name: str = CHUNK_VECTOR_INDEX) -> str:
         if embedding_dimension <= 0:
@@ -89,6 +97,16 @@ OPTIONS {{indexConfig: {{
   `vector.dimensions`: {int(embedding_dimension)},
   `vector.similarity_function`: 'cosine'
 }}}}
+""".strip()
+
+    @staticmethod
+    def _fulltext_index_query(index_name: str = CHUNK_FULLTEXT_INDEX) -> str:
+        if not index_name.replace("_", "").isalnum():
+            raise ValueError(f"Invalid fulltext index name: {index_name}")
+
+        return f"""
+CREATE FULLTEXT INDEX {index_name} IF NOT EXISTS
+FOR (c:Chunk) ON EACH [c.text]
 """.strip()
 
     @staticmethod
