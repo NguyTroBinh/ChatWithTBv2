@@ -1,24 +1,24 @@
 # ChatWithTB v2
 
-Bản nâng cấp của [ChatWithTB](https://github.com/NguyTroBinh/ChatWithTB) — hệ thống RAG chatbot cho tài liệu PDF. Version 2 tập trung vào **tối ưu truy vấn** bằng cách kết hợp nhiều kỹ thuật: hybrid chunking, knowledge graph, retrieval (naive + local + global + deep search), và citation bắt buộc trong mọi câu trả lời.
+An upgrade of [ChatWithTB](https://github.com/NguyTroBinh/ChatWithTB) — a RAG chatbot system for PDF documents. Version 2 focuses on **optimizing retrieval** by combining multiple techniques: hybrid chunking, knowledge graph, retrieval (naive + local + global + deep search), and mandatory citation in every answer.
 
 ![Chat UI](docs/chat-ui.png)
 
-## Cấu trúc dự án
+## Project Structure
 
 ```
 app/
 ├── main.py                  # FastAPI app, API endpoints (/api/upload, /api/chat)
 ├── core/
-│   └── config.py            # Biến môi trường, cấu hình model/Neo4j/LLM
+│   └── config.py            # Environment variables, model/Neo4j/LLM configuration
 ├── ingestion/
 │   └── pdf_loader.py        # PDF → Markdown
 ├── chunking/
-│   └── chunker.py           # Hybrid chunking pipeline (5 bước)
+│   └── chunker.py           # Hybrid chunking pipeline (5 steps)
 ├── providers/
 │   ├── embedding.py         # Embedding service (Vietnamese_Embedding)
 │   ├── reranking.py         # Cross-encoder reranker (Vietnamese_Reranker)
-│   └── litellm_client.py    # LLM adapter qua LiteLLM (switch provider)
+│   └── litellm_client.py    # LLM adapter via LiteLLM (switch provider)
 ├── extraction/
 │   ├── entity_extractor.py  # LLM-based entity & relationship extraction
 │   └── community_builder.py # Graph community detection + summary
@@ -28,40 +28,40 @@ app/
 │   ├── naive.py             # Vector + Fulltext search, RRF merge
 │   └── local.py             # Graph-aware retrieval (entity → chunk → context)
 ├── reasoning/
-│   └── answer_generator.py  # LLM sinh câu trả lời có citation
+│   └── answer_generator.py  # LLM generates answers with citation
 ├── pipeline/
-│   ├── ingest.py            # Pipeline ingest: PDF → chunk → embed → Neo4j → graph
-│   ├── naive_chat.py        # Retrieve → Rerank → Generate (mode fast)
-│   ├── local_chat.py        # Graph-aware retrieve → Rerank → Generate (mode balanced)
+│   ├── ingest.py            # Ingest pipeline: PDF → chunk → embed → Neo4j → graph
+│   ├── naive_chat.py        # Retrieve → Rerank → Generate (fast mode)
+│   ├── local_chat.py        # Graph-aware retrieve → Rerank → Generate (balanced mode)
 │   └── graph_builder.py     # Entity extraction + community building
 web/                         # Frontend chat UI (HTML/CSS/JS)
-prompts/                     # Prompt templates tiếng Việt (answer, entity, community)
+prompts/                     # Vietnamese prompt templates (answer, entity, community)
 data/
-├── raw/pdf/                 # PDF gốc
-└── processed/               # Markdown đã convert
+├── raw/pdf/                 # Original PDFs
+└── processed/               # Converted Markdown
 ```
 
-## Kỹ thuật áp dụng
+## Techniques
 
-### Hybrid Chunking (5 bước)
+### Hybrid Chunking (5 steps)
 
-1. **Table isolation** — Phát hiện bảng Markdown, cô lập bằng `\n\n` tránh bị cắt đôi.
-2. **Markdown header split** — Tách theo cấu trúc heading (H1/H2/H3), giữ metadata section.
-3. **Structure split** — Chunk lớn > 1200 tokens được chia tiếp theo separator tự nhiên (paragraph, numbered list).
-4. **Smart merge** — Chunk nhỏ < 200 tokens bắt buộc gộp; chunk < 700 tokens gộp nếu cùng topic.
-5. **Semantic split** — Chunk vẫn lớn được chia bằng SemanticChunker (gradient breakpoint) dựa trên embedding similarity.
+1. **Table isolation** — Detect Markdown tables, isolate with `\n\n` to prevent splitting mid-table.
+2. **Markdown header split** — Split by heading structure (H1/H2/H3), preserve section metadata.
+3. **Structure split** — Chunks > 1200 tokens are further split by natural separators (paragraph, numbered list).
+4. **Smart merge** — Chunks < 200 tokens are force-merged; chunks < 700 tokens are merged if same topic.
+5. **Semantic split** — Remaining large chunks are split by SemanticChunker (gradient breakpoint) based on embedding similarity.
 
 ### Knowledge Graph (Neo4j)
 
-- **Entity & Relationship extraction** — LLM trích xuất entity (tên, loại, mô tả) và relationship từ mỗi chunk.
-- **Community detection** — Weakly Connected Components trên graph, LLM tạo summary cho mỗi community.
-- **Graph schema**: `Document → Chunk → Entity → Community`, với vector + fulltext index trên cả 3 node type.
+- **Entity & Relationship extraction** — LLM extracts entities (name, type, description) and relationships from each chunk.
+- **Community detection** — Weakly Connected Components on the graph, LLM generates a summary for each community.
+- **Graph schema**: `Document → Chunk → Entity → Community`, with vector + fulltext indexes on all 3 node types.
 
 ### Retrieval
 
-#### Naive Search — câu hỏi trực tiếp, đơn giản
+#### Naive Search — direct, simple questions
 
-> *"Mức phạt vi phạm lâm nghiệp là bao nhiêu?"*
+> *"What is the penalty for forestry violations?"*
 
 ```
 Query → Embed → Vector search (Chunk)
@@ -70,11 +70,11 @@ Query → Embed → Vector search (Chunk)
                  RRF merge → Rerank → Generate + Citation
 ```
 
-Tìm chunk trực tiếp bằng semantic + lexical, merge bằng Reciprocal Rank Fusion, rerank bằng cross-encoder.
+Finds chunks directly via semantic + lexical search, merges with Reciprocal Rank Fusion, reranks with cross-encoder.
 
-#### Local Search — câu hỏi về entity, điều khoản, khái niệm cụ thể
+#### Local Search — questions about specific entities, clauses, or concepts
 
-> *"Nghị định 156/2018 quy định gì về phân cấp dự báo cháy rừng?"*
+> *"What does Decree 156/2018 stipulate about forest fire forecast classification?"*
 
 ```
 Query → Extract keywords/entities
@@ -83,61 +83,61 @@ Query → Extract keywords/entities
            ↓
          Chunk mentions entity → Neighbor chunks (prev/next)
            ↓
-         Community context (nếu có)
+         Community context (if available)
            ↓
          Rerank → Generate + Citation
 ```
 
-Đi từ entity trong knowledge graph → quay về chunk gốc chứa entity đó → mở rộng ngữ cảnh bằng chunk lân cận.
+Starts from entities in the knowledge graph → traces back to source chunks containing that entity → expands context with neighboring chunks.
 
-#### Global Search — câu hỏi tổng quan, tóm tắt *(planned)*
+#### Global Search — overview, summary questions *(planned)*
 
-> *"Tóm tắt các giai đoạn triển khai của dự án?"*
+> *"Summarize the project's implementation phases?"*
 
 ```
 Query → Extract high-level intent
            ↓
          Search Community summaries
            ↓
-         Entity thuộc community → Chunk đại diện
+         Entities in community → Representative chunks
            ↓
-         Generate tổng hợp + Citation
+         Generate synthesis + Citation
 ```
 
-Dùng community summary để định hướng, nhưng citation vẫn trỏ về chunk/document gốc.
+Uses community summaries for orientation, but citations still point back to source chunks/documents.
 
-#### Deep Search — câu hỏi phức tạp, nhiều ý, so sánh *(planned)*
+#### Deep Search — complex, multi-part, comparative questions *(planned)*
 
-> *"So sánh yêu cầu kỹ thuật giữa module phát hiện cháy và module phát hiện mất rừng?"*
+> *"Compare the technical requirements between the fire detection module and the deforestation detection module?"*
 
 ```
-Query → Planner tách sub-questions
+Query → Planner decomposes into sub-questions
            ↓
-         Mỗi sub-question → chọn mode (naive/local/global)
+         Each sub-question → select mode (naive/local/global)
            ↓
-         Retrieve evidence → Critic kiểm tra đủ/thiếu
+         Retrieve evidence → Critic checks sufficiency
            ↓
-         Lặp thêm nếu thiếu (max 2-3 vòng)
+         Additional rounds if insufficient (max 2-3 rounds)
            ↓
-         Synthesizer tổng hợp → Citation validator
+         Synthesizer aggregates → Citation validator
 ```
 
-Multi-round reasoning: tách câu hỏi → retrieve nhiều vòng → kiểm tra evidence trước khi tổng hợp.
+Multi-round reasoning: decompose question → retrieve across multiple rounds → verify evidence before synthesizing.
 
 ---
 
 ### Provider-switchable LLM
 
-Sử dụng LiteLLM làm adapter — hỗ trợ Ollama, OpenAI, NVIDIA NIM, Gemini, vLLM, ...
+Uses LiteLLM as adapter — supports Ollama, OpenAI, NVIDIA NIM, Gemini, vLLM, ...
 
-## Cài đặt và chạy
+## Installation and Usage
 
-### Yêu cầu
+### Requirements
 
 - Python 3.12+
-- Docker (cho Neo4j)
+- Docker (for Neo4j)
 
-### Cài đặt
+### Setup
 
 ```bash
 git clone https://github.com/NguyTroBinh/ChatWithTBv2.git
@@ -148,25 +148,25 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# Chỉnh LLM_API_KEY và các config trong .env
+# Edit LLM_API_KEY and other config in .env
 ```
 
-### Khởi động Neo4j
+### Start Neo4j
 
 ```bash
 docker compose up -d
 ```
 
-### Chạy server
+### Run server
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Mở trình duyệt tại `http://localhost:8000` để sử dụng chat UI.
+Open browser at `http://localhost:8000` to use the chat UI.
 
-## Hướng phát triển
+## Future Plans
 
-- **Memory** — Tích hợp conversation memory từ ChatWithTB v1, cho phép hỏi đáp nhiều lượt có ngữ cảnh.
-- **Cache** — Cache embedding, retrieval result và answer theo version để tránh tính toán lại.
-- **Deep Search** — Multi-round reasoning: tách câu hỏi phức tạp thành sub-questions, retrieve nhiều vòng, critic kiểm tra thiếu evidence trước khi tổng hợp.
+- **Memory** — Integrate conversation memory from ChatWithTB v1, enabling multi-turn Q&A with context.
+- **Cache** — Cache embeddings, retrieval results, and answers by version to avoid recomputation.
+- **Deep Search** — Multi-round reasoning: decompose complex questions into sub-questions, retrieve across multiple rounds, critic verifies evidence sufficiency before synthesizing.
