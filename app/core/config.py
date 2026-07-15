@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,6 +16,10 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 NEO4J_DATABASE = os.getenv("NEO4J_DATABASE", "neo4j")
 CHUNK_VECTOR_INDEX = os.getenv("CHUNK_VECTOR_INDEX", "chunk_embedding")
 CHUNK_FULLTEXT_INDEX = os.getenv("CHUNK_FULLTEXT_INDEX", "chunk_text")
+ENTITY_VECTOR_INDEX = os.getenv("ENTITY_VECTOR_INDEX", "entity_embedding")
+ENTITY_FULLTEXT_INDEX = os.getenv("ENTITY_FULLTEXT_INDEX", "entity_text")
+COMMUNITY_VECTOR_INDEX = os.getenv("COMMUNITY_VECTOR_INDEX", "community_embedding")
+COMMUNITY_FULLTEXT_INDEX = os.getenv("COMMUNITY_FULLTEXT_INDEX", "community_text")
 
 # RERANKER_MODEL
 RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "AITeamVN/Vietnamese_Reranker")

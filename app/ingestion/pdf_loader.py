@@ -26,7 +26,7 @@ class PDFLoader:
 
             with pdfplumber.open(pdf_path) as pdf:
                 pages = [
-                    f"# Page {page_number}\n\n{text.strip()}"
+                    f"<!-- page:{page_number} -->\n\n{text.strip()}"
                     for page_number, page in enumerate(pdf.pages, start=1)
                     if (text := page.extract_text()) and text.strip()
                 ]

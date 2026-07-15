@@ -3,7 +3,11 @@ from typing import Any
 from app.core.config import (
     CHUNK_FULLTEXT_INDEX,
     CHUNK_VECTOR_INDEX,
+    COMMUNITY_FULLTEXT_INDEX,
+    COMMUNITY_VECTOR_INDEX,
     EMBEDDING_DIMENSION,
+    ENTITY_FULLTEXT_INDEX,
+    ENTITY_VECTOR_INDEX,
     NEO4J_DATABASE,
     NEO4J_PASSWORD,
     NEO4J_URI,
@@ -42,12 +46,12 @@ class Neo4jGraphStore:
         with self._session() as session:
             session.execute_write(self._create_constraints)
             session.execute_write(self._create_indexes)
-            session.execute_write(
-                self._create_vector_index,
-                self.embedding_dimension,
-                self.vector_index_name,
-            )
+            session.execute_write(self._create_vector_index, self.embedding_dimension, self.vector_index_name)
             session.execute_write(self._create_fulltext_index, self.fulltext_index_name)
+            session.execute_write(self._create_vector_index, self.embedding_dimension, ENTITY_VECTOR_INDEX)
+            session.execute_write(self._create_entity_fulltext_index)
+            session.execute_write(self._create_vector_index, self.embedding_dimension, COMMUNITY_VECTOR_INDEX)
+            session.execute_write(self._create_community_fulltext_index)
 
     def save_document_chunks(
         self,
@@ -70,10 +74,13 @@ class Neo4jGraphStore:
     def _create_constraints(tx) -> None:
         tx.run("CREATE CONSTRAINT document_id IF NOT EXISTS FOR (d:Document) REQUIRE d.id IS UNIQUE")
         tx.run("CREATE CONSTRAINT chunk_id IF NOT EXISTS FOR (c:Chunk) REQUIRE c.id IS UNIQUE")
+        tx.run("CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE")
+        tx.run("CREATE CONSTRAINT community_id IF NOT EXISTS FOR (cm:Community) REQUIRE cm.id IS UNIQUE")
 
     @staticmethod
     def _create_indexes(tx) -> None:
         tx.run("CREATE INDEX chunk_document_id IF NOT EXISTS FOR (c:Chunk) ON (c.documentId)")
+        tx.run("CREATE INDEX entity_type IF NOT EXISTS FOR (e:Entity) ON (e.type)")
 
     @classmethod
     def _create_vector_index(cls, tx, embedding_dimension: int, index_name: str) -> None:
@@ -108,6 +115,103 @@ OPTIONS {{indexConfig: {{
 CREATE FULLTEXT INDEX {index_name} IF NOT EXISTS
 FOR (c:Chunk) ON EACH [c.text]
 """.strip()
+
+    @staticmethod
+    def _create_entity_fulltext_index(tx) -> None:
+        tx.run(f"""
+CREATE FULLTEXT INDEX {ENTITY_FULLTEXT_INDEX} IF NOT EXISTS
+FOR (e:Entity) ON EACH [e.canonicalName, e.aliases, e.description]
+""".strip())
+
+    @staticmethod
+    def _create_community_fulltext_index(tx) -> None:
+        tx.run(f"""
+CREATE FULLTEXT INDEX {COMMUNITY_FULLTEXT_INDEX} IF NOT EXISTS
+FOR (cm:Community) ON EACH [cm.summary]
+""".strip())
+
+    def save_entities(self, entities: list[dict], chunk_id: str) -> None:
+        """Upsert entities and MENTIONS relationships from a chunk."""
+        with self._session() as session:
+            session.execute_write(self._upsert_entities, entities, chunk_id)
+
+    def save_relationships(self, relationships: list[dict]) -> None:
+        """Upsert RELATED relationships between entities."""
+        with self._session() as session:
+            session.execute_write(self._upsert_relationships, relationships)
+
+    def save_community(self, community: dict, entity_ids: list[str]) -> None:
+        """Upsert a Community node and IN_COMMUNITY relationships."""
+        with self._session() as session:
+            session.execute_write(self._upsert_community, community, entity_ids)
+
+    @staticmethod
+    def _upsert_entities(tx, entities: list[dict], chunk_id: str) -> None:
+        tx.run(
+            """
+UNWIND $entities AS row
+MERGE (e:Entity {id: row.id})
+ON CREATE SET e.createdAt = datetime()
+SET e.canonicalName = row.canonicalName,
+    e.aliases       = row.aliases,
+    e.type          = row.type,
+    e.description   = row.description,
+    e.confidence    = row.confidence,
+    e.embedding     = row.embedding,
+    e.updatedAt     = datetime()
+WITH e, row
+MATCH (c:Chunk {id: $chunk_id})
+MERGE (c)-[:MENTIONS {confidence: row.confidence}]->(e)
+""",
+            entities=entities,
+            chunk_id=chunk_id,
+        )
+
+    @staticmethod
+    def _upsert_relationships(tx, relationships: list[dict]) -> None:
+        tx.run(
+            """
+UNWIND $rels AS row
+MATCH (a:Entity {id: row.source_id})
+MATCH (b:Entity {id: row.target_id})
+MERGE (a)-[r:RELATED {type: row.type}]->(b)
+ON CREATE SET r.createdAt = datetime()
+SET r.description   = row.description,
+    r.confidence    = row.confidence,
+    r.weight        = row.weight,
+    r.sourceChunkIds = row.sourceChunkIds,
+    r.updatedAt     = datetime()
+""",
+            rels=relationships,
+        )
+
+    @staticmethod
+    def _upsert_community(tx, community: dict, entity_ids: list[str]) -> None:
+        tx.run(
+            """
+MERGE (cm:Community {id: $id})
+ON CREATE SET cm.createdAt = datetime()
+SET cm.level       = $level,
+    cm.algorithm   = $algorithm,
+    cm.summary     = $summary,
+    cm.fullContent = $fullContent,
+    cm.rank        = $rank,
+    cm.embedding   = $embedding,
+    cm.updatedAt   = datetime()
+WITH cm
+UNWIND $entity_ids AS eid
+MATCH (e:Entity {id: eid})
+MERGE (e)-[:IN_COMMUNITY]->(cm)
+""",
+            id=community["id"],
+            level=community.get("level", 0),
+            algorithm=community.get("algorithm", ""),
+            summary=community.get("summary", ""),
+            fullContent=community.get("fullContent", ""),
+            rank=community.get("rank", 0),
+            embedding=community.get("embedding"),
+            entity_ids=entity_ids,
+        )
 
     @staticmethod
     def _replace_document_chunks(tx, payload: dict) -> None:

@@ -8,7 +8,7 @@ class RerankerService:
         from transformers import AutoModelForSequenceClassification, XLMRobertaTokenizer
 
         self.torch = torch
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = "cpu"
         self.tokenizer = XLMRobertaTokenizer.from_pretrained(
             model_name,
             cache_dir=cache_folder

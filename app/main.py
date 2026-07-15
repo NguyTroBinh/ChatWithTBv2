@@ -1,12 +1,17 @@
 from pathlib import Path
 import shutil
+from typing import Literal
+
+# ponytail: deep mode routes to LocalChatPipeline for now; upgrade to DeepSearchPipeline when ready
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app.pipeline.naive_rag import NaiveRAGPipeline
+from app.pipeline.ingest import IngestPipeline
+from app.pipeline.naive_chat import NaiveChatPipeline
+from app.pipeline.local_chat import LocalChatPipeline
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -16,20 +21,37 @@ WEB_DIR = ROOT_DIR / "web"
 app = FastAPI(title="Chat With TB")
 app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 
-_pipeline: NaiveRAGPipeline | None = None
+_ingest_pipeline: IngestPipeline | None = None
+_naive_pipeline: NaiveChatPipeline | None = None
+_local_pipeline: LocalChatPipeline | None = None
 
 
 class ChatRequest(BaseModel):
     query: str
     top_k: int = 5
     document_ids: list[str] = Field(default_factory=list)
+    mode: Literal["fast", "balanced", "deep"] = "fast"
 
 
-def get_pipeline() -> NaiveRAGPipeline:
-    global _pipeline
-    if _pipeline is None:
-        _pipeline = NaiveRAGPipeline.from_config()
-    return _pipeline
+def get_ingest_pipeline() -> IngestPipeline:
+    global _ingest_pipeline
+    if _ingest_pipeline is None:
+        _ingest_pipeline = IngestPipeline.from_config()
+    return _ingest_pipeline
+
+
+def get_naive_pipeline() -> NaiveChatPipeline:
+    global _naive_pipeline
+    if _naive_pipeline is None:
+        _naive_pipeline = NaiveChatPipeline.from_config()
+    return _naive_pipeline
+
+
+def get_local_pipeline() -> LocalChatPipeline:
+    global _local_pipeline
+    if _local_pipeline is None:
+        _local_pipeline = LocalChatPipeline.from_config()
+    return _local_pipeline
 
 
 @app.get("/")
@@ -43,9 +65,13 @@ def health():
 
 
 @app.post("/api/upload")
-def upload_pdf(files: list[UploadFile] = File(...)):
+def upload_pdf(
+    files: list[UploadFile] = File(...),
+):
     if not files:
         raise HTTPException(status_code=400, detail="No PDF files uploaded.")
+
+    pipeline = get_ingest_pipeline()
 
     RAW_PDF_DIR.mkdir(parents=True, exist_ok=True)
     documents = []
@@ -59,7 +85,7 @@ def upload_pdf(files: list[UploadFile] = File(...)):
             with raw_path.open("wb") as output:
                 shutil.copyfileobj(file.file, output)
 
-            documents.append(get_pipeline().ingest_pdf(raw_path))
+            documents.append(pipeline.ingest_pdf(raw_path))
         except HTTPException:
             raise
         except Exception as exc:
@@ -72,12 +98,14 @@ def upload_pdf(files: list[UploadFile] = File(...)):
 
 @app.post("/api/chat")
 def chat(request: ChatRequest):
-    document_ids = [document_id.strip() for document_id in request.document_ids if document_id.strip()]
+    document_ids = [did.strip() for did in request.document_ids if did.strip()]
     if not document_ids:
         raise HTTPException(status_code=400, detail="Upload at least one PDF before asking.")
 
+    pipeline = get_local_pipeline() if request.mode == "balanced" else get_naive_pipeline()
+
     try:
-        return get_pipeline().chat(request.query, top_k=request.top_k, document_ids=document_ids)
+        return pipeline.chat(request.query, top_k=request.top_k, document_ids=document_ids)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -86,5 +114,9 @@ def chat(request: ChatRequest):
 
 @app.on_event("shutdown")
 def shutdown():
-    if _pipeline is not None:
-        _pipeline.close()
+    if _ingest_pipeline is not None:
+        _ingest_pipeline.close()
+    if _naive_pipeline is not None:
+        _naive_pipeline.close()
+    if _local_pipeline is not None:
+        _local_pipeline.close()

@@ -235,7 +235,7 @@ class ChunkingService:
         headers = [
             metadata[header]
             for header in ["H1", "H2", "H3"]
-            if header in metadata and not self._is_page_header(metadata[header])
+            if header in metadata
         ]
         if not headers: return content
         context_str = " > ".join(headers)
@@ -245,15 +245,11 @@ class ChunkingService:
 
     @staticmethod
     def _extract_page_range(headers: Dict, content: str) -> tuple[int | None, int | None]:
-        pages = []
-        for value in headers.values():
-            match = re.fullmatch(r"(?:Page|Trang)\s+(\d+)", str(value).strip(), flags=re.IGNORECASE)
-            if match:
-                pages.append(int(match.group(1)))
-
-        for match in re.finditer(r"^#{1,6}\s*(?:Page|Trang)\s+(\d+)\s*$", content, flags=re.MULTILINE | re.IGNORECASE):
-            pages.append(int(match.group(1)))
-
+        # ponytail: page info now lives in <!-- page:N --> HTML comments, not headers
+        pages = [
+            int(m.group(1))
+            for m in re.finditer(r"<!--\s*page:(\d+)\s*-->", content)
+        ]
         if not pages:
             return None, None
         return min(pages), max(pages)
@@ -263,21 +259,13 @@ class ChunkingService:
         return " > ".join(
             str(headers[key]).strip()
             for key in ["H1", "H2", "H3"]
-            if headers.get(key) and not ChunkingService._is_page_header(headers[key])
+            if headers.get(key)
         )
 
     @staticmethod
-    def _is_page_header(value: object) -> bool:
-        return bool(re.fullmatch(r"(?:Page|Trang)\s+\d+", str(value).strip(), flags=re.IGNORECASE))
-
-    @staticmethod
     def _strip_page_markers(content: str) -> str:
-        return re.sub(
-            r"^#{1,6}\s*(?:Page|Trang)\s+\d+\s*\n?",
-            "",
-            content,
-            flags=re.MULTILINE | re.IGNORECASE,
-        ).strip()
+        # ponytail: strip <!-- page:N --> comments after extracting page info
+        return re.sub(r"<!--\s*page:\d+\s*-->\n?", "", content).strip()
 
     @staticmethod
     def _hash_text(text: str) -> str:

@@ -23,6 +23,7 @@ const state = {
   files: [],
   activeDocuments: [],
   busy: false,
+  mode: "fast",
 };
 
 renderFiles();
@@ -84,6 +85,36 @@ newChatButton.addEventListener("click", () => {
 });
 
 bindSuggestionButtons();
+bindModeButtons();
+
+function bindModeButtons() {
+  const trigger = document.querySelector(".mode-trigger");
+  const dropdown = document.querySelector(".mode-dropdown");
+  const modeLabel = document.querySelector(".mode-label");
+
+  trigger.addEventListener("click", () => {
+    const isOpen = !dropdown.hidden;
+    dropdown.hidden = isOpen;
+    trigger.setAttribute("aria-expanded", String(!isOpen));
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!trigger.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  document.querySelectorAll(".mode-option").forEach((option) => {
+    option.addEventListener("click", () => {
+      state.mode = option.dataset.mode;
+      modeLabel.textContent = option.textContent;
+      document.querySelectorAll(".mode-option").forEach((o) => o.classList.toggle("is-selected", o === option));
+      dropdown.hidden = true;
+      trigger.setAttribute("aria-expanded", "false");
+    });
+  });
+}
 
 function addFiles(fileListLike) {
   const files = Array.from(fileListLike || []);
@@ -178,6 +209,7 @@ async function submitQuestion() {
         query,
         top_k: 5,
         document_ids: state.activeDocuments.map((document) => document.document_id),
+        mode: state.mode,
       }),
     });
     const result = await response.json();

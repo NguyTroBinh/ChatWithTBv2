@@ -92,6 +92,17 @@
                 <span aria-hidden="true">+</span>
               </button>
               <textarea id="query" rows="1" placeholder="Đặt câu hỏi về tài liệu..." aria-label="Câu hỏi"></textarea>
+              <div class="mode-selector">
+                <button class="mode-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                  <span class="mode-label">Fast</span>
+                  <span class="mode-caret" aria-hidden="true">&#8964;</span>
+                </button>
+                <ul class="mode-dropdown" role="listbox" aria-label="Chế độ tìm kiếm" hidden>
+                  <li class="mode-option is-selected" role="option" data-mode="fast">Fast</li>
+                  <li class="mode-option" role="option" data-mode="balanced">Balanced</li>
+                  <li class="mode-option" role="option" data-mode="deep">Deep</li>
+                </ul>
+              </div>
               <button id="send-button" class="send-button" type="submit">
                 Gửi <span aria-hidden="true">→</span>
               </button>
