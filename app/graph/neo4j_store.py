@@ -46,11 +46,11 @@ class Neo4jGraphStore:
         with self._session() as session:
             session.execute_write(self._create_constraints)
             session.execute_write(self._create_indexes)
-            session.execute_write(self._create_vector_index, self.embedding_dimension, self.vector_index_name)
+            session.execute_write(self._create_vector_index, self.embedding_dimension, self.vector_index_name, "Chunk")
             session.execute_write(self._create_fulltext_index, self.fulltext_index_name)
-            session.execute_write(self._create_vector_index, self.embedding_dimension, ENTITY_VECTOR_INDEX)
+            session.execute_write(self._create_vector_index, self.embedding_dimension, ENTITY_VECTOR_INDEX, "Entity")
             session.execute_write(self._create_entity_fulltext_index)
-            session.execute_write(self._create_vector_index, self.embedding_dimension, COMMUNITY_VECTOR_INDEX)
+            session.execute_write(self._create_vector_index, self.embedding_dimension, COMMUNITY_VECTOR_INDEX, "Community")
             session.execute_write(self._create_community_fulltext_index)
 
     def save_document_chunks(
@@ -83,23 +83,39 @@ class Neo4jGraphStore:
         tx.run("CREATE INDEX entity_type IF NOT EXISTS FOR (e:Entity) ON (e.type)")
 
     @classmethod
-    def _create_vector_index(cls, tx, embedding_dimension: int, index_name: str) -> None:
-        tx.run(cls._vector_index_query(embedding_dimension, index_name))
+    def _create_vector_index(
+        cls,
+        tx,
+        embedding_dimension: int,
+        index_name: str,
+        label: str = "Chunk",
+        property_name: str = "embedding",
+    ) -> None:
+        tx.run(cls._vector_index_query(embedding_dimension, index_name, label, property_name))
 
     @classmethod
     def _create_fulltext_index(cls, tx, index_name: str) -> None:
         tx.run(cls._fulltext_index_query(index_name))
 
     @staticmethod
-    def _vector_index_query(embedding_dimension: int, index_name: str = CHUNK_VECTOR_INDEX) -> str:
+    def _vector_index_query(
+        embedding_dimension: int,
+        index_name: str = CHUNK_VECTOR_INDEX,
+        label: str = "Chunk",
+        property_name: str = "embedding",
+    ) -> str:
         if embedding_dimension <= 0:
             raise ValueError("embedding_dimension must be greater than 0")
         if not index_name.replace("_", "").isalnum():
             raise ValueError(f"Invalid vector index name: {index_name}")
+        if not label.replace("_", "").isalnum():
+            raise ValueError(f"Invalid vector index label: {label}")
+        if not property_name.replace("_", "").isalnum():
+            raise ValueError(f"Invalid vector index property: {property_name}")
 
         return f"""
 CREATE VECTOR INDEX {index_name} IF NOT EXISTS
-FOR (c:Chunk) ON (c.embedding)
+FOR (n:{label}) ON (n.{property_name})
 OPTIONS {{indexConfig: {{
   `vector.dimensions`: {int(embedding_dimension)},
   `vector.similarity_function`: 'cosine'
@@ -179,7 +195,11 @@ ON CREATE SET r.createdAt = datetime()
 SET r.description   = row.description,
     r.confidence    = row.confidence,
     r.weight        = row.weight,
-    r.sourceChunkIds = row.sourceChunkIds,
+    r.sourceChunkIds = reduce(
+        ids = coalesce(r.sourceChunkIds, []),
+        chunk_id IN row.sourceChunkIds |
+        CASE WHEN chunk_id IN ids THEN ids ELSE ids + chunk_id END
+    ),
     r.updatedAt     = datetime()
 """,
             rels=relationships,
@@ -197,6 +217,11 @@ SET cm.level       = $level,
     cm.fullContent = $fullContent,
     cm.rank        = $rank,
     cm.embedding   = $embedding,
+    cm.documentIds = reduce(
+        ids = coalesce(cm.documentIds, []),
+        document_id IN $documentIds |
+        CASE WHEN document_id IN ids THEN ids ELSE ids + document_id END
+    ),
     cm.updatedAt   = datetime()
 WITH cm
 UNWIND $entity_ids AS eid
@@ -210,11 +235,13 @@ MERGE (e)-[:IN_COMMUNITY]->(cm)
             fullContent=community.get("fullContent", ""),
             rank=community.get("rank", 0),
             embedding=community.get("embedding"),
+            documentIds=community.get("documentIds", []),
             entity_ids=entity_ids,
         )
 
     @staticmethod
     def _replace_document_chunks(tx, payload: dict) -> None:
+        old_entity_ids = Neo4jGraphStore._delete_document_graph(tx, payload["document_id"])
         tx.run(
             """
 MERGE (d:Document {id: $document_id})
@@ -234,6 +261,7 @@ DETACH DELETE old
 """,
             document_id=payload["document_id"],
         )
+        Neo4jGraphStore._delete_orphan_entities(tx, old_entity_ids)
         tx.run(
             """
 UNWIND $chunks AS row
@@ -265,6 +293,72 @@ MATCH (to:Chunk {id: link.to})
 MERGE (from)-[:NEXT_CHUNK]->(to)
 """,
             links=payload["links"],
+        )
+
+    @staticmethod
+    def _delete_document_graph(tx, document_id: str) -> list[str]:
+        old_graph = tx.run(
+            """
+MATCH (d:Document {id: $document_id})-[:HAS_CHUNK]->(old:Chunk)
+OPTIONAL MATCH (old)-[:MENTIONS]->(e:Entity)
+RETURN collect(DISTINCT old.id) AS chunk_ids,
+       collect(DISTINCT e.id) AS entity_ids
+""",
+            document_id=document_id,
+        ).single()
+        if not old_graph:
+            return []
+
+        chunk_ids = [chunk_id for chunk_id in old_graph["chunk_ids"] if chunk_id]
+        entity_ids = [entity_id for entity_id in old_graph["entity_ids"] if entity_id]
+        if not chunk_ids and not entity_ids:
+            return []
+
+        tx.run(
+            """
+MATCH ()-[r:RELATED]->()
+WHERE any(chunk_id IN coalesce(r.sourceChunkIds, []) WHERE chunk_id IN $chunk_ids)
+WITH r, [chunk_id IN coalesce(r.sourceChunkIds, []) WHERE NOT chunk_id IN $chunk_ids] AS remaining
+FOREACH (_ IN CASE WHEN size(remaining) = 0 THEN [1] ELSE [] END | DELETE r)
+FOREACH (_ IN CASE WHEN size(remaining) > 0 THEN [1] ELSE [] END | SET r.sourceChunkIds = remaining)
+""",
+            chunk_ids=chunk_ids,
+        )
+        tx.run(
+            """
+MATCH (cm:Community)
+WHERE $document_id IN coalesce(cm.documentIds, [])
+WITH cm, [doc_id IN coalesce(cm.documentIds, []) WHERE doc_id <> $document_id] AS remaining
+FOREACH (_ IN CASE WHEN size(remaining) = 0 THEN [1] ELSE [] END | DETACH DELETE cm)
+FOREACH (_ IN CASE WHEN size(remaining) > 0 THEN [1] ELSE [] END | SET cm.documentIds = remaining)
+""",
+            document_id=document_id,
+        )
+        tx.run(
+            """
+MATCH (e:Entity)-[:IN_COMMUNITY]->(cm:Community)
+WHERE e.id IN $entity_ids AND cm.documentIds IS NULL
+WITH DISTINCT cm
+DETACH DELETE cm
+""",
+            entity_ids=entity_ids,
+        )
+        return entity_ids
+
+    @staticmethod
+    def _delete_orphan_entities(tx, entity_ids: list[str]) -> None:
+        if not entity_ids:
+            return
+        tx.run(
+            """
+UNWIND $entity_ids AS entity_id
+MATCH (e:Entity {id: entity_id})
+WHERE NOT EXISTS {
+  MATCH (:Chunk)-[:MENTIONS]->(e)
+}
+DETACH DELETE e
+""",
+            entity_ids=entity_ids,
         )
 
     @classmethod

@@ -10,9 +10,11 @@ class AnswerGenerator:
     def from_config(cls) -> "AnswerGenerator":
         return cls(llm_client=LiteLLMClient())
 
-    def generate(self, query: str, chunks: list[dict]) -> dict:
+    def generate(self, query: str, chunks: list[dict], chat_mode: str = "naive") -> dict:
         if not isinstance(query, str) or not query.strip():
             raise ValueError("query is required")
+        if chat_mode not in {"naive", "local"}:
+            raise ValueError("chat_mode must be naive or local")
         if not chunks:
             return {
                 "answer": "Chưa đủ thông tin trong tài liệu để trả lời câu hỏi này.",
@@ -25,7 +27,7 @@ class AnswerGenerator:
             {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
-                "content": f"CÂU HỎI:\n{query.strip()}\n\nCONTEXT:\n{self._context(chunks)}",
+                "content": f"CÂU HỎI:\n{query.strip()}\n\nCHẾ ĐỘ CHAT:\n{chat_mode}\n\nCONTEXT:\n{self._context(chunks, chat_mode)}",
             },
         ]
         return {
@@ -35,7 +37,7 @@ class AnswerGenerator:
         }
 
     @staticmethod
-    def _context(chunks: list[dict]) -> str:
+    def _context(chunks: list[dict], chat_mode: str = "naive") -> str:
         blocks = []
         for index, chunk in enumerate(chunks, start=1):
             metadata = chunk.get("metadata") or {}
@@ -51,13 +53,27 @@ class AnswerGenerator:
 
             blocks.append(
                 "\n".join(
-                    [
-                        f"[Đoạn {index}] Nguồn: {source}",
-                        chunk.get("content", ""),
-                    ]
+                    AnswerGenerator._context_lines(index, source, chunk, metadata, chat_mode)
                 )
             )
         return "\n\n".join(blocks)
+
+    @staticmethod
+    def _context_lines(index: int, source: str, chunk: dict, metadata: dict, chat_mode: str) -> list[str]:
+        lines = [f"[Đoạn {index}] Nguồn: {source}"]
+        if chat_mode == "local":
+            matched_entities = metadata.get("matched_entities") or []
+            relationship_context = (metadata.get("relationship_context") or "").strip()
+            community_context = (metadata.get("community_context") or "").strip()
+            if matched_entities:
+                lines.append(f"Thực thể khớp: {', '.join(matched_entities)}")
+            if relationship_context:
+                lines.extend(["Ngữ cảnh quan hệ:", relationship_context])
+            if community_context:
+                lines.extend(["Ngữ cảnh cộng đồng:", community_context])
+            lines.append("Nội dung đoạn:")
+        lines.append(chunk.get("content", ""))
+        return lines
 
     @staticmethod
     def _evidence(chunks: list[dict]) -> list[dict]:

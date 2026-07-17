@@ -35,7 +35,7 @@ class NaiveChatPipeline:
     def chat(self, query: str, top_k: int = 5, document_ids: list[str] | None = None) -> dict:
         chunks = self.retriever.retrieve(query, top_k=top_k * 2, document_ids=document_ids)
         chunks = self.reranker.rerank(query, chunks, top_k=top_k)
-        result = self.answer_generator.generate(query, chunks)
+        result = self.answer_generator.generate(query, chunks, chat_mode="naive")
         result["mode"] = "naive"
         return result
 

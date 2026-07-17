@@ -59,20 +59,34 @@ class LocalRetrievalService:
         # Step 2: tìm entity bằng vector + fulltext → RRF merge, scoped theo document_ids
         query_embedding = self.embedding_service.embed_query(query)
         with self.graph_store._session() as session:
-            vec_entities = session.execute_read(
-                self._entity_vector_search,
-                self.entity_vector_index,
-                query_embedding,
-                self.entity_top_k,
-                document_ids,
-            )
-            ft_entities = session.execute_read(
-                self._entity_fulltext_search,
-                self.entity_fulltext_index,
-                " ".join(keywords),
-                self.entity_top_k,
-                document_ids,
-            ) if keywords else []
+            if document_ids is None:
+                vec_entities = session.execute_read(
+                    self._entity_vector_search,
+                    self.entity_vector_index,
+                    query_embedding,
+                    self.entity_top_k,
+                    document_ids,
+                )
+                ft_entities = session.execute_read(
+                    self._entity_fulltext_search,
+                    self.entity_fulltext_index,
+                    " ".join(keywords),
+                    self.entity_top_k,
+                    document_ids,
+                ) if keywords else []
+            else:
+                vec_entities = session.execute_read(
+                    self._scoped_entity_vector_search,
+                    query_embedding,
+                    self.entity_top_k,
+                    document_ids,
+                )
+                ft_entities = session.execute_read(
+                    self._scoped_entity_fulltext_search,
+                    keywords,
+                    self.entity_top_k,
+                    document_ids,
+                ) if keywords else []
 
         entities = self._rrf_merge_entities(
             [("vector", vec_entities), ("fulltext", ft_entities)],
@@ -160,6 +174,34 @@ LIMIT $top_k
         return [dict(r) for r in result]
 
     @staticmethod
+    def _scoped_entity_vector_search(
+        tx,
+        query_embedding: list[float],
+        top_k: int,
+        document_ids: list[str],
+    ) -> list[dict]:
+        result = tx.run(
+            """
+MATCH (c:Chunk)-[:MENTIONS]->(e:Entity)
+WHERE c.documentId IN $document_ids
+  AND e.embedding IS NOT NULL
+WITH DISTINCT e, vector.similarity.cosine(e.embedding, $query_embedding) AS score
+RETURN
+  e.id AS id,
+  e.canonicalName AS canonicalName,
+  e.type AS type,
+  e.description AS description,
+  score
+ORDER BY score DESC
+LIMIT $top_k
+""",
+            document_ids=document_ids,
+            top_k=top_k,
+            query_embedding=[float(v) for v in query_embedding],
+        )
+        return [dict(r) for r in result]
+
+    @staticmethod
     def _entity_fulltext_search(
         tx,
         index_name: str,
@@ -182,6 +224,45 @@ LIMIT $top_k
             query=query,
             top_k=top_k,
             document_ids=document_ids or [],
+        )
+        return [dict(r) for r in result]
+
+    @staticmethod
+    def _scoped_entity_fulltext_search(
+        tx,
+        terms: list[str],
+        top_k: int,
+        document_ids: list[str],
+    ) -> list[dict]:
+        # ponytail: scopes entities via mentioning chunks first; upgrade to entity-level doc index if corpus grows.
+        result = tx.run(
+            """
+MATCH (c:Chunk)-[:MENTIONS]->(e:Entity)
+WHERE c.documentId IN $document_ids
+WITH DISTINCT e,
+     toLower(
+       coalesce(e.canonicalName, '') + ' ' +
+       coalesce(e.description, '') + ' ' +
+       reduce(alias_text = '', alias IN coalesce(e.aliases, []) |
+         alias_text + ' ' + alias
+       )
+     ) AS text
+WITH e, [term IN $terms WHERE text CONTAINS term] AS matched_terms
+WITH e, size(matched_terms) AS hit_count
+WHERE hit_count > 0
+WITH e, toFloat(hit_count) / size($terms) AS score
+RETURN
+  e.id AS id,
+  e.canonicalName AS canonicalName,
+  e.type AS type,
+  e.description AS description,
+  score
+ORDER BY score DESC, e.canonicalName ASC
+LIMIT $top_k
+""",
+            document_ids=document_ids,
+            terms=terms,
+            top_k=top_k,
         )
         return [dict(r) for r in result]
 

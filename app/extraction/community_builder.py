@@ -50,6 +50,7 @@ class CommunityBuilder:
 
             community = {
                 "id": component_id,
+                "documentIds": document_ids or [],
                 "level": 0,
                 "algorithm": "wcc",
                 "summary": summary,
