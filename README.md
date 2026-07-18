@@ -169,4 +169,3 @@ Open browser at `http://localhost:8000` to use the chat UI.
 
 - **Memory** — Integrate conversation memory from ChatWithTB v1, enabling multi-turn Q&A with context.
 - **Cache** — Cache embeddings, retrieval results, and answers by version to avoid recomputation.
-- **Deep Search** — Multi-round reasoning: decompose complex questions into sub-questions, retrieve across multiple rounds, critic verifies evidence sufficiency before synthesizing.
