@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#eef3f1" />
     <title>Chat With TB</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260710-3" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260718-2" />
   </head>
   <body>
     <div class="app-frame">
@@ -19,7 +19,7 @@
         </a>
 
         <div class="topbar-actions">
-          <span class="system-status"><span class="status-dot"></span>Naive RAG ready</span>
+          <span class="system-status"><span class="status-dot"></span>RAG modes ready</span>
           <button id="new-chat" class="button button-secondary" type="button">
             <span class="button-icon" aria-hidden="true">+</span>
             Cuộc chat mới
@@ -37,26 +37,38 @@
             <span id="source-count" class="count-badge">0</span>
           </div>
 
-          <form id="upload-form" class="source-content">
-            <label id="dropzone" class="dropzone" for="pdf-file">
-              <span class="dropzone-icon" aria-hidden="true">+</span>
-              <span class="dropzone-title">Chọn hoặc kéo PDF vào đây</span>
-              <span class="dropzone-meta">Một hoặc nhiều tệp · tối đa tùy cấu hình server</span>
-              <input id="pdf-file" name="files" type="file" accept="application/pdf" multiple />
-            </label>
+          <div class="source-content">
+            <form id="upload-form" class="upload-section">
+              <label id="dropzone" class="dropzone" for="pdf-file">
+                <span class="dropzone-icon" aria-hidden="true">+</span>
+                <span class="dropzone-title">Chọn hoặc kéo PDF vào đây</span>
+                <span class="dropzone-meta">Một hoặc nhiều tệp · tối đa tùy cấu hình server</span>
+                <input id="pdf-file" name="files" type="file" accept="application/pdf" multiple />
+              </label>
 
-            <div class="list-heading">
-              <span>Tệp đã chọn</span>
-              <span id="file-count" class="subtle-count">0</span>
-            </div>
-            <div id="file-list" class="file-list" aria-live="polite"></div>
+              <div class="list-heading">
+                <span>Tệp đã chọn</span>
+                <span id="file-count" class="subtle-count">0</span>
+              </div>
+              <div id="file-list" class="file-list" aria-live="polite"></div>
 
-            <button id="upload-submit" class="button button-primary upload-submit" type="submit" disabled>
-              <span class="button-icon" aria-hidden="true">↑</span>
-              Nạp tài liệu
-            </button>
-            <div id="upload-status" class="inline-status" aria-live="polite"></div>
-          </form>
+              <button id="upload-submit" class="button button-primary upload-submit" type="submit" disabled>
+                <span class="button-icon" aria-hidden="true">↑</span>
+                Nạp tài liệu
+              </button>
+              <div id="upload-status" class="inline-status" aria-live="polite"></div>
+            </form>
+
+            <section class="document-library" aria-labelledby="document-library-title">
+              <div class="list-heading document-library-heading">
+                <span id="document-library-title">Tài liệu trong DB</span>
+                <button id="refresh-documents" class="tiny-button" type="button">Làm mới</button>
+              </div>
+              <input id="document-search" class="document-search" type="search" placeholder="Tìm tài liệu đã nạp..." aria-label="Tìm tài liệu trong DB" autocomplete="off" />
+              <div id="document-list" class="stored-doc-list" aria-live="polite"></div>
+              <div id="document-status" class="inline-status" aria-live="polite"></div>
+            </section>
+          </div>
 
           <div class="source-footer">
             <span class="footer-label">Phạm vi hiện tại</span>
@@ -100,6 +112,7 @@
                 <ul class="mode-dropdown" role="listbox" aria-label="Chế độ tìm kiếm" hidden>
                   <li class="mode-option is-selected" role="option" data-mode="fast">Fast</li>
                   <li class="mode-option" role="option" data-mode="balanced">Balanced</li>
+                  <li class="mode-option" role="option" data-mode="deep">Deep</li>
                 </ul>
               </div>
               <button id="send-button" class="send-button" type="submit">
@@ -134,6 +147,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260710-4"></script>
+    <script src="/static/app.js?v=20260718-2"></script>
   </body>
 </html>

@@ -65,6 +65,12 @@ class Neo4jGraphStore:
             session.execute_write(self._replace_document_chunks, payload)
         return {"document_id": payload["document_id"], "chunk_count": len(payload["chunks"])}
 
+    def list_documents(self, search: str = "", limit: int = 50) -> list[dict]:
+        search = (search or "").strip().lower()
+        limit = max(1, min(int(limit), 100))
+        with self._session() as session:
+            return session.execute_read(self._list_documents, search, limit)
+
     def _session(self):
         if self.database:
             return self.driver.session(database=self.database)
@@ -81,6 +87,27 @@ class Neo4jGraphStore:
     def _create_indexes(tx) -> None:
         tx.run("CREATE INDEX chunk_document_id IF NOT EXISTS FOR (c:Chunk) ON (c.documentId)")
         tx.run("CREATE INDEX entity_type IF NOT EXISTS FOR (e:Entity) ON (e.type)")
+
+    @staticmethod
+    def _list_documents(tx, search: str, limit: int) -> list[dict]:
+        result = tx.run(
+            """
+MATCH (d:Document)
+OPTIONAL MATCH (d)-[:HAS_CHUNK]->(c:Chunk)
+WITH d, count(c) AS chunk_count
+WHERE chunk_count > 0
+  AND ($search = "" OR toLower(coalesce(d.fileName, "")) CONTAINS $search)
+RETURN
+  d.id AS document_id,
+  d.fileName AS file_name,
+  toString(d.updatedAt) AS updated_at
+ORDER BY d.updatedAt DESC, d.fileName ASC
+LIMIT $limit
+""",
+            search=search,
+            limit=limit,
+        )
+        return [dict(record) for record in result]
 
     @classmethod
     def _create_vector_index(

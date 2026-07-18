@@ -2,16 +2,16 @@ from pathlib import Path
 import shutil
 from typing import Literal
 
-# ponytail: deep mode routes to LocalChatPipeline for now; upgrade to DeepSearchPipeline when ready
-
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app.graph.neo4j_store import Neo4jGraphStore
 from app.pipeline.ingest import IngestPipeline
 from app.pipeline.naive_chat import NaiveChatPipeline
 from app.pipeline.local_chat import LocalChatPipeline
+from app.reasoning.deepsearch import DeepSearchPipeline
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -24,6 +24,8 @@ app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
 _ingest_pipeline: IngestPipeline | None = None
 _naive_pipeline: NaiveChatPipeline | None = None
 _local_pipeline: LocalChatPipeline | None = None
+_deep_pipeline: DeepSearchPipeline | None = None
+_document_store: Neo4jGraphStore | None = None
 
 
 class ChatRequest(BaseModel):
@@ -54,6 +56,20 @@ def get_local_pipeline() -> LocalChatPipeline:
     return _local_pipeline
 
 
+def get_deep_pipeline() -> DeepSearchPipeline:
+    global _deep_pipeline
+    if _deep_pipeline is None:
+        _deep_pipeline = DeepSearchPipeline.from_config()
+    return _deep_pipeline
+
+
+def get_document_store() -> Neo4jGraphStore:
+    global _document_store
+    if _document_store is None:
+        _document_store = Neo4jGraphStore.from_config()
+    return _document_store
+
+
 @app.get("/")
 def index():
     return FileResponse(WEB_DIR / "index.html")
@@ -62,6 +78,18 @@ def index():
 @app.get("/health")
 def health():
     return {"status": "ok", "app": "Chat With TB"}
+
+
+@app.get("/api/documents")
+def list_documents(
+    q: str = "",
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    try:
+        documents = get_document_store().list_documents(search=q, limit=limit)
+        return {"documents": documents}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.post("/api/upload")
@@ -102,7 +130,12 @@ def chat(request: ChatRequest):
     if not document_ids:
         raise HTTPException(status_code=400, detail="Upload at least one PDF before asking.")
 
-    pipeline = get_local_pipeline() if request.mode == "balanced" else get_naive_pipeline()
+    if request.mode == "deep":
+        pipeline = get_deep_pipeline()
+    elif request.mode == "balanced":
+        pipeline = get_local_pipeline()
+    else:
+        pipeline = get_naive_pipeline()
 
     try:
         return pipeline.chat(request.query, top_k=request.top_k, document_ids=document_ids)
@@ -120,3 +153,7 @@ def shutdown():
         _naive_pipeline.close()
     if _local_pipeline is not None:
         _local_pipeline.close()
+    if _deep_pipeline is not None:
+        _deep_pipeline.close()
+    if _document_store is not None:
+        _document_store.close()

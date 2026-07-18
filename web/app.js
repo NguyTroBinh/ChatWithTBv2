@@ -18,16 +18,31 @@ const evidenceList = document.querySelector("#evidence-list");
 const evidenceCount = document.querySelector("#evidence-count");
 const evidenceSummary = document.querySelector("#evidence-summary");
 const newChatButton = document.querySelector("#new-chat");
+const documentSearch = document.querySelector("#document-search");
+const documentList = document.querySelector("#document-list");
+const documentStatus = document.querySelector("#document-status");
+const refreshDocumentsButton = document.querySelector("#refresh-documents");
 
 const state = {
   files: [],
+  availableDocuments: [],
   activeDocuments: [],
   busy: false,
+  documentsLoading: false,
+  documentLoadToken: 0,
   mode: "fast",
 };
 
+const MODE_LABELS = {
+  fast: "Fast",
+  balanced: "Balanced",
+  deep: "Deep",
+};
+
 renderFiles();
+renderDocumentLibrary();
 renderActiveDocuments();
+loadDocuments();
 
 fileInput.addEventListener("change", () => {
   addFiles(fileInput.files);
@@ -56,6 +71,14 @@ uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   await uploadQueuedFiles();
 });
+
+let documentSearchTimer = null;
+documentSearch.addEventListener("input", () => {
+  clearTimeout(documentSearchTimer);
+  documentSearchTimer = setTimeout(() => loadDocuments(), 250);
+});
+
+refreshDocumentsButton.addEventListener("click", () => loadDocuments());
 
 attachButton.addEventListener("click", () => composerFiles.click());
 
@@ -153,17 +176,13 @@ async function uploadQueuedFiles() {
     const result = await response.json();
     if (!response.ok) throw new Error(result.detail || "Không thể nạp tài liệu.");
 
-    for (const document of result.documents || []) {
-      const item = pendingFiles.find((entry) => entry.file.name === document.file_name);
+    for (const doc of result.documents || []) {
+      const item = pendingFiles.find((entry) => entry.file.name === doc.file_name);
       if (item) {
         item.status = "uploaded";
-        item.document = document;
+        item.document = doc;
       }
-      const existingIndex = state.activeDocuments.findIndex(
-        (entry) => entry.document_id === document.document_id,
-      );
-      if (existingIndex >= 0) state.activeDocuments[existingIndex] = document;
-      else state.activeDocuments.push(document);
+      upsertActiveDocument(doc);
     }
 
     pendingFiles.forEach((item) => {
@@ -171,6 +190,7 @@ async function uploadQueuedFiles() {
     });
     setUploadStatus(`${state.activeDocuments.length} tài liệu đang được dùng để chat.`);
     renderActiveDocuments();
+    loadDocuments();
   } catch (error) {
     pendingFiles.forEach((item) => { item.status = "error"; });
     setUploadStatus(error.message, true);
@@ -178,6 +198,37 @@ async function uploadQueuedFiles() {
     state.busy = false;
     renderFiles();
     updateUploadButton();
+  }
+}
+
+async function loadDocuments() {
+  const loadToken = state.documentLoadToken + 1;
+  state.documentLoadToken = loadToken;
+  state.documentsLoading = true;
+  renderDocumentLibrary();
+  setDocumentStatus("");
+
+  const params = new URLSearchParams();
+  const query = documentSearch.value.trim();
+  if (query) params.set("q", query);
+
+  try {
+    const response = await fetch(`/api/documents${params.toString() ? `?${params}` : ""}`);
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Không thể tải tài liệu trong DB.");
+    if (loadToken !== state.documentLoadToken) return;
+
+    state.availableDocuments = result.documents || [];
+    setDocumentStatus(state.availableDocuments.length ? "" : "Không có tài liệu phù hợp.");
+  } catch (error) {
+    if (loadToken !== state.documentLoadToken) return;
+    state.availableDocuments = [];
+    setDocumentStatus(error.message, true);
+  } finally {
+    if (loadToken === state.documentLoadToken) {
+      state.documentsLoading = false;
+      renderDocumentLibrary();
+    }
   }
 }
 
@@ -195,11 +246,11 @@ async function submitQuestion() {
   addUserMessage(query);
   queryInput.value = "";
   resizeQueryInput();
-  setChatState("Đang truy xuất");
+  setChatState(state.mode === "deep" ? "Đang lập kế hoạch và truy xuất" : "Đang truy xuất");
 
   const pending = addAssistantMessage("");
   pending.bubble.classList.add("is-pending");
-  pending.bubble.innerHTML = '<span>Đang tìm evidence</span><span class="thinking-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>';
+  pending.bubble.innerHTML = `<span>${pendingMessage()}</span><span class="thinking-dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>`;
 
   try {
     const response = await fetch("/api/chat", {
@@ -208,7 +259,7 @@ async function submitQuestion() {
       body: JSON.stringify({
         query,
         top_k: 5,
-        document_ids: state.activeDocuments.map((document) => document.document_id),
+        document_ids: state.activeDocuments.map((doc) => doc.document_id),
         mode: state.mode,
       }),
     });
@@ -241,6 +292,60 @@ function renderFiles() {
     state.files.forEach((item) => fileList.appendChild(fileItemNode(item)));
   }
   updateUploadButton();
+}
+
+function renderDocumentLibrary() {
+  if (state.documentsLoading) {
+    documentList.innerHTML = '<div class="file-empty">Đang tải tài liệu trong DB...</div>';
+    return;
+  }
+
+  if (!state.availableDocuments.length) {
+    documentList.innerHTML = '<div class="file-empty">Chưa có tài liệu trong DB.</div>';
+    return;
+  }
+
+  documentList.innerHTML = "";
+  state.availableDocuments.forEach((doc) => {
+    documentList.appendChild(storedDocumentNode(doc));
+  });
+}
+
+function storedDocumentNode(doc) {
+  const selected = isActiveDocument(doc.document_id);
+  const node = document.createElement("button");
+  node.className = `stored-doc-item${selected ? " is-selected" : ""}`;
+  node.type = "button";
+  node.setAttribute("aria-pressed", String(selected));
+
+  const details = document.createElement("span");
+  const name = document.createElement("span");
+  name.className = "stored-doc-name";
+  name.title = doc.file_name || "PDF";
+  name.textContent = doc.file_name || "PDF";
+  const updated = document.createElement("span");
+  updated.className = "stored-doc-date";
+  updated.textContent = formatUpdatedAt(doc.updated_at);
+  details.append(name, updated);
+
+  const check = document.createElement("span");
+  check.className = "stored-doc-check";
+  check.setAttribute("aria-hidden", "true");
+  check.textContent = "✓";
+
+  node.append(details, check);
+  node.addEventListener("click", () => toggleStoredDocument(doc));
+  return node;
+}
+
+function toggleStoredDocument(doc) {
+  if (isActiveDocument(doc.document_id)) {
+    removeActiveDocument(doc.document_id, false);
+  } else {
+    upsertActiveDocument(doc);
+    renderActiveDocuments();
+  }
+  renderDocumentLibrary();
 }
 
 function fileItemNode(item) {
@@ -278,19 +383,18 @@ function removeFile(id) {
   const removed = state.files.find((item) => item.id === id);
   state.files = state.files.filter((item) => item.id !== id);
   if (removed?.document?.document_id) {
-    state.activeDocuments = state.activeDocuments.filter(
-      (document) => document.document_id !== removed.document.document_id,
-    );
+    state.activeDocuments = state.activeDocuments.filter((doc) => doc.document_id !== removed.document.document_id);
   }
   renderFiles();
   renderActiveDocuments();
+  renderDocumentLibrary();
   setUploadStatus("");
 }
 
 function renderActiveDocuments() {
   sourceCount.textContent = state.activeDocuments.length;
   sourceScope.textContent = state.activeDocuments.length
-    ? `${state.activeDocuments.length} tài liệu đã nạp`
+    ? `${state.activeDocuments.length} tài liệu đang chọn`
     : "Chưa có tài liệu";
   activeDocumentsNode.innerHTML = "";
 
@@ -311,11 +415,38 @@ function renderActiveDocuments() {
   });
 }
 
-function removeActiveDocument(documentId) {
-  state.activeDocuments = state.activeDocuments.filter((document) => document.document_id !== documentId);
-  state.files = state.files.filter((item) => item.document?.document_id !== documentId);
+function upsertActiveDocument(doc) {
+  const normalized = normalizeDocument(doc);
+  if (!normalized.document_id) return;
+
+  const existingIndex = state.activeDocuments.findIndex(
+    (entry) => entry.document_id === normalized.document_id,
+  );
+  if (existingIndex >= 0) state.activeDocuments[existingIndex] = normalized;
+  else state.activeDocuments.push(normalized);
+}
+
+function normalizeDocument(doc) {
+  return {
+    ...doc,
+    document_id: doc.document_id || doc.documentId,
+    file_name: doc.file_name || doc.fileName || "PDF",
+    updated_at: doc.updated_at || doc.updatedAt || null,
+  };
+}
+
+function isActiveDocument(documentId) {
+  return state.activeDocuments.some((doc) => doc.document_id === documentId);
+}
+
+function removeActiveDocument(documentId, removeUploadedFile = true) {
+  state.activeDocuments = state.activeDocuments.filter((doc) => doc.document_id !== documentId);
+  if (removeUploadedFile) {
+    state.files = state.files.filter((item) => item.document?.document_id !== documentId);
+  }
   renderFiles();
   renderActiveDocuments();
+  renderDocumentLibrary();
 }
 
 function appendAssistantContent(bubble, text) {
@@ -351,9 +482,7 @@ function appendInlineSources(bubble, result) {
 function renderEvidence(result) {
   const evidence = responseEvidence(result);
   evidenceCount.textContent = evidence.length;
-  evidenceSummary.textContent = evidence.length
-    ? `${evidence.length} đoạn được dùng cho câu trả lời`
-    : "Không tìm thấy evidence phù hợp";
+  evidenceSummary.textContent = evidenceSummaryText(result, evidence);
   evidenceList.innerHTML = "";
 
   if (!evidence.length) {
@@ -404,6 +533,20 @@ function renderEvidence(result) {
 
 function responseEvidence(result) {
   return [result.evidence, result.usedEvidence, result.citations].find(Array.isArray) || [];
+}
+
+function evidenceSummaryText(result, evidence) {
+  if (!evidence.length) return "Không tìm thấy evidence phù hợp";
+  const subQueryCount = result.deepSearch?.subQueries?.length;
+  if (result.mode === "deep" && subQueryCount) {
+    return `${evidence.length} đoạn từ ${subQueryCount} sub-query`;
+  }
+  return `${evidence.length} đoạn được dùng cho câu trả lời`;
+}
+
+function pendingMessage() {
+  if (state.mode === "deep") return "Đang lập kế hoạch sub-query và tìm evidence";
+  return `Đang tìm evidence (${MODE_LABELS[state.mode] || "Fast"})`;
 }
 
 function clearEvidence() {
@@ -555,6 +698,11 @@ function setUploadStatus(text, isError = false) {
   uploadStatus.classList.toggle("is-error", isError);
 }
 
+function setDocumentStatus(text, isError = false) {
+  documentStatus.textContent = text;
+  documentStatus.classList.toggle("is-error", isError);
+}
+
 function setChatState(text) {
   chatState.textContent = text;
 }
@@ -579,6 +727,13 @@ function formatBytes(bytes) {
   const units = ["B", "KB", "MB", "GB"];
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   return `${(bytes / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
+}
+
+function formatUpdatedAt(value) {
+  if (!value) return "Chưa rõ ngày cập nhật";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return `Cập nhật ${String(value).split("T")[0]}`;
+  return `Cập nhật ${date.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}`;
 }
 
 function pageLabel(start, end) {
