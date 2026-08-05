@@ -3,7 +3,7 @@ import re
 
 from app.core.config import CHUNK_FULLTEXT_INDEX, CHUNK_VECTOR_INDEX
 from app.graph.neo4j_store import Neo4jGraphStore
-from app.providers.embedding import EmbeddingService
+from app.providers.embedding import EmbeddingService, get_embedding_service
 
 class NaiveRetrievalService:
     def __init__(
@@ -24,7 +24,7 @@ class NaiveRetrievalService:
     def from_config(cls) -> "NaiveRetrievalService":
         return cls(
             graph_store=Neo4jGraphStore.from_config(),
-            embedding_service=EmbeddingService(),
+            embedding_service=get_embedding_service(),
         )
 
     def close(self) -> None:

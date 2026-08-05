@@ -32,10 +32,23 @@ class NaiveChatPipeline:
             answer_generator=AnswerGenerator.from_config(),
         )
 
-    def chat(self, query: str, top_k: int = 5, document_ids: list[str] | None = None) -> dict:
+    def chat(
+        self,
+        query: str,
+        top_k: int = 5,
+        document_ids: list[str] | None = None,
+        memory_context: dict | None = None,
+    ) -> dict:
         chunks = self.retriever.retrieve(query, top_k=top_k * 2, document_ids=document_ids)
         chunks = self.reranker.rerank(query, chunks, top_k=top_k)
-        result = self.answer_generator.generate(query, chunks, chat_mode="naive")
+        memory = memory_context or {}
+        result = self.answer_generator.generate(
+            query,
+            chunks,
+            chat_mode="naive",
+            conversation_history=memory.get("conversation_history"),
+            long_term_memories=memory.get("long_term_memories"),
+        )
         result["mode"] = "naive"
         return result
 

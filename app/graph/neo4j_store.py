@@ -71,6 +71,13 @@ class Neo4jGraphStore:
         with self._session() as session:
             return session.execute_read(self._list_documents, search, limit)
 
+    def get_documents_by_ids(self, document_ids: list[str]) -> list[dict]:
+        ids = list(dict.fromkeys(str(document_id).strip() for document_id in document_ids if str(document_id).strip()))
+        if not ids:
+            return []
+        with self._session() as session:
+            return session.execute_read(self._get_documents_by_ids, ids)
+
     def _session(self):
         if self.database:
             return self.driver.session(database=self.database)
@@ -108,6 +115,22 @@ LIMIT $limit
             limit=limit,
         )
         return [dict(record) for record in result]
+
+    @staticmethod
+    def _get_documents_by_ids(tx, document_ids: list[str]) -> list[dict]:
+        result = tx.run(
+            """
+UNWIND $document_ids AS document_id
+MATCH (d:Document {id: document_id})
+RETURN
+  d.id AS document_id,
+  d.fileName AS file_name,
+  toString(d.updatedAt) AS updated_at
+""",
+            document_ids=document_ids,
+        )
+        rows = {record["document_id"]: dict(record) for record in result}
+        return [rows[document_id] for document_id in document_ids if document_id in rows]
 
     @classmethod
     def _create_vector_index(

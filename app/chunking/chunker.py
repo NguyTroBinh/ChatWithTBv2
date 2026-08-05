@@ -11,13 +11,13 @@ TOKEN_COUNT_WINDOW_CHARS = 5000
 
 class ChunkingService:
     def __init__(self):
-        from app.providers.embedding import EmbeddingService
+        from app.providers.embedding import get_embedding_service
         from langchain_experimental.text_splitter import SemanticChunker
         from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
         from transformers import AutoTokenizer
 
         # Load model embedding
-        self.embeddings = EmbeddingService()
+        self.embeddings = get_embedding_service()
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(self.embeddings.get_model_name())

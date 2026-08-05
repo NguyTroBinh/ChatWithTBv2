@@ -1,4 +1,8 @@
 from app.core.config import BATCH_SIZE, EMBEDDING_MODEL_NAME, MODEL_CACHE_DIR
+from threading import Lock
+
+_embedding_service = None
+_embedding_lock = Lock()
 
 class EmbeddingService:
     def __init__(self, model_name=EMBEDDING_MODEL_NAME, cache_folder=MODEL_CACHE_DIR):
@@ -38,3 +42,12 @@ class EmbeddingService:
         )
 
         return embeddings.tolist()
+
+
+def get_embedding_service() -> EmbeddingService:
+    global _embedding_service
+    if _embedding_service is None:
+        with _embedding_lock:
+            if _embedding_service is None:
+                _embedding_service = EmbeddingService()
+    return _embedding_service

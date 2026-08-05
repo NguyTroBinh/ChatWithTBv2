@@ -68,7 +68,13 @@ class DeepSearchPipeline:
             planner_llm=LiteLLMClient(temperature=0, max_tokens=512),
         )
 
-    def chat(self, query: str, top_k: int = 5, document_ids: list[str] | None = None) -> dict:
+    def chat(
+        self,
+        query: str,
+        top_k: int = 5,
+        document_ids: list[str] | None = None,
+        memory_context: dict | None = None,
+    ) -> dict:
         query = self._clean_query(query)
         if top_k <= 0:
             raise ValueError("top_k must be greater than 0")
@@ -81,7 +87,14 @@ class DeepSearchPipeline:
         candidates, chunks, rounds = self._search_rounds(sub_queries, top_k, document_ids)
         retrieved_count = sum(item["retrievedCount"] for round_info in rounds for item in round_info["queries"])
 
-        result = self.answer_generator.generate(query, chunks, chat_mode="naive")
+        memory = memory_context or {}
+        result = self.answer_generator.generate(
+            query,
+            chunks,
+            chat_mode="naive",
+            conversation_history=memory.get("conversation_history"),
+            long_term_memories=memory.get("long_term_memories"),
+        )
         result["mode"] = "deep"
         result["deepSearch"] = {
             "subQueries": sub_queries,

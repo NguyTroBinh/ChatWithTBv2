@@ -11,22 +11,35 @@ const chatForm = document.querySelector("#chat-form");
 const queryInput = document.querySelector("#query");
 const messages = document.querySelector("#messages");
 const chatState = document.querySelector("#chat-state");
+const workspace = document.querySelector("#workspace");
 const attachButton = document.querySelector("#attach-button");
 const composerFiles = document.querySelector("#composer-files");
 const activeDocumentsNode = document.querySelector("#active-documents");
-const evidenceList = document.querySelector("#evidence-list");
-const evidenceCount = document.querySelector("#evidence-count");
-const evidenceSummary = document.querySelector("#evidence-summary");
+const historyToggle = document.querySelector("#history-toggle");
+const historyPanel = document.querySelector("#history-panel");
 const newChatButton = document.querySelector("#new-chat");
+const conversationList = document.querySelector("#conversation-list");
+const conversationExpand = document.querySelector("#conversation-expand");
+const conversationStatus = document.querySelector("#conversation-status");
+const conversationDialog = document.querySelector("#conversation-dialog");
+const conversationDialogForm = document.querySelector("#conversation-dialog-form");
+const conversationDialogTitle = document.querySelector("#conversation-dialog-title");
+const conversationTitleInput = document.querySelector("#conversation-title-input");
 const documentSearch = document.querySelector("#document-search");
 const documentList = document.querySelector("#document-list");
 const documentStatus = document.querySelector("#document-status");
 const refreshDocumentsButton = document.querySelector("#refresh-documents");
+const SESSION_STORAGE_KEY = "chat_with_tb_session_id";
 
 const state = {
   files: [],
   availableDocuments: [],
   activeDocuments: [],
+  conversations: [],
+  sessionId: getOrCreateSessionId(),
+  conversationKnown: false,
+  historyOpen: false,
+  historyExpanded: false,
   busy: false,
   documentsLoading: false,
   documentLoadToken: 0,
@@ -42,7 +55,10 @@ const MODE_LABELS = {
 renderFiles();
 renderDocumentLibrary();
 renderActiveDocuments();
+applyHistoryState();
+renderConversations();
 loadDocuments();
+loadConversations();
 
 fileInput.addEventListener("change", () => {
   addFiles(fileInput.files);
@@ -100,15 +116,231 @@ queryInput.addEventListener("keydown", (event) => {
   }
 });
 
-newChatButton.addEventListener("click", () => {
-  messages.innerHTML = emptyStateMarkup();
-  bindSuggestionButtons();
-  clearEvidence();
-  setChatState("Sẵn sàng");
+historyToggle.addEventListener("click", () => setHistoryOpen(!state.historyOpen));
+newChatButton.addEventListener("click", () => createNewConversation());
+conversationExpand.addEventListener("click", () => {
+  state.historyExpanded = !state.historyExpanded;
+  renderConversations();
+});
+conversationDialogForm.addEventListener("submit", handleConversationDialogSubmit);
+conversationDialog.addEventListener("cancel", () => {
+  conversationDialog.returnValue = "cancel";
+});
+document.addEventListener("click", (event) => {
+  if (!event.target.closest?.(".conversation-item")) closeConversationMenus();
 });
 
 bindSuggestionButtons();
 bindModeButtons();
+
+function setHistoryOpen(isOpen) {
+  state.historyOpen = isOpen;
+  applyHistoryState();
+}
+
+function applyHistoryState() {
+  workspace.classList.toggle("history-open", state.historyOpen);
+  historyPanel.hidden = !state.historyOpen;
+  historyToggle.setAttribute("aria-expanded", String(state.historyOpen));
+}
+
+async function loadConversations({ openCurrent = true } = {}) {
+  setConversationStatus("");
+  try {
+    const response = await fetch("/api/conversations?limit=50");
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Không thể tải lịch sử chat.");
+    state.conversations = result.conversations || [];
+    state.conversationKnown = state.conversations.some((item) => item.sessionId === state.sessionId);
+    renderConversations();
+    if (openCurrent && state.conversationKnown) {
+      await loadConversation(state.sessionId, { touch: false, refreshList: false });
+    }
+  } catch (error) {
+    setConversationStatus(error.message, true);
+  }
+}
+
+async function createNewConversation() {
+  const sessionId = randomSessionId();
+  const title = await askConversationTitle({
+    heading: "Đặt tên đoạn chat",
+    fallback: `TB ${sessionId}`,
+  });
+  if (title === null) return;
+
+  try {
+    const response = await fetch("/api/conversations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId, title, document_ids: [] }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Không thể tạo đoạn chat mới.");
+    activateConversationPayload(result, { clearWhenEmpty: true });
+    upsertConversation(result.conversation);
+    setHistoryOpen(true);
+    renderConversations();
+    setChatState("Sẵn sàng");
+  } catch (error) {
+    setConversationStatus(error.message, true);
+  }
+}
+
+async function loadConversation(sessionId, { touch = true, refreshList = true } = {}) {
+  try {
+    const response = await fetch(
+      touch
+        ? `/api/conversations/${encodeURIComponent(sessionId)}/open`
+        : `/api/conversations/${encodeURIComponent(sessionId)}`,
+      { method: touch ? "POST" : "GET" },
+    );
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Không thể mở đoạn chat.");
+    activateConversationPayload(result);
+    if (refreshList) await loadConversations({ openCurrent: false });
+  } catch (error) {
+    setConversationStatus(error.message, true);
+  }
+}
+
+function activateConversationPayload(result, { clearWhenEmpty = false } = {}) {
+  const conversation = result.conversation;
+  if (!conversation?.sessionId) return;
+  state.sessionId = conversation.sessionId;
+  localStorage.setItem(SESSION_STORAGE_KEY, state.sessionId);
+  state.conversationKnown = true;
+  state.files = [];
+  state.activeDocuments = (result.documents || []).map(normalizeDocument);
+  renderFiles();
+  renderActiveDocuments();
+  renderDocumentLibrary();
+  renderHistoryMessages(result.messages || [], clearWhenEmpty);
+  setChatState("Sẵn sàng");
+}
+
+function renderHistoryMessages(history, clearWhenEmpty = false) {
+  messages.innerHTML = "";
+  if (!history.length) {
+    messages.innerHTML = emptyStateMarkup();
+    bindSuggestionButtons();
+    if (clearWhenEmpty) scrollMessagesToBottom();
+    return;
+  }
+  history.forEach((item) => {
+    if (item.role === "user") addUserMessage(item.content || "");
+    else addAssistantMessage(item.content || "");
+  });
+  scrollMessagesToBottom();
+}
+
+function upsertConversation(conversation) {
+  if (!conversation?.sessionId) return;
+  state.conversations = [
+    conversation,
+    ...state.conversations.filter((item) => item.sessionId !== conversation.sessionId),
+  ];
+}
+
+async function renameConversation(conversation) {
+  const title = await askConversationTitle({
+    heading: "Đổi tên đoạn chat",
+    value: conversation.title || "",
+    fallback: conversation.title || `TB ${conversation.sessionId}`,
+  });
+  if (title === null) return;
+  try {
+    const response = await fetch(`/api/conversations/${encodeURIComponent(conversation.sessionId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Không thể đổi tên đoạn chat.");
+    upsertConversation(result.conversation);
+    renderConversations();
+  } catch (error) {
+    setConversationStatus(error.message, true);
+  }
+}
+
+async function deleteConversation(conversation) {
+  if (!confirm(`Xóa "${conversation.title}" và toàn bộ lịch sử liên quan?`)) return;
+  try {
+    const response = await fetch(`/api/conversations/${encodeURIComponent(conversation.sessionId)}`, {
+      method: "DELETE",
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Không thể xóa đoạn chat.");
+    state.conversations = state.conversations.filter((item) => item.sessionId !== conversation.sessionId);
+    if (state.sessionId === conversation.sessionId) {
+      state.sessionId = resetSessionId();
+      state.conversationKnown = false;
+      state.files = [];
+      state.activeDocuments = [];
+      messages.innerHTML = emptyStateMarkup();
+      bindSuggestionButtons();
+      renderFiles();
+      renderActiveDocuments();
+      renderDocumentLibrary();
+      setChatState("Sẵn sàng");
+    }
+    renderConversations();
+  } catch (error) {
+    setConversationStatus(error.message, true);
+  }
+}
+
+async function syncActiveConversationDocuments() {
+  if (!state.conversationKnown) return;
+  try {
+    const response = await fetch(`/api/conversations/${encodeURIComponent(state.sessionId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ document_ids: state.activeDocuments.map((doc) => doc.document_id) }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "Không thể lưu phạm vi tài liệu.");
+    upsertConversation(result.conversation);
+    renderConversations();
+  } catch (error) {
+    setConversationStatus(error.message, true);
+  }
+}
+
+function askConversationTitle({ heading, value = "", fallback }) {
+  if (!conversationDialog.showModal) {
+    const title = prompt(heading, value);
+    return Promise.resolve(title === null ? null : (title.trim() || fallback));
+  }
+  return new Promise((resolve) => {
+    conversationDialogTitle.textContent = heading;
+    conversationDialog.dataset.fallback = fallback;
+    conversationTitleInput.value = value;
+    conversationDialog._resolve = resolve;
+    conversationDialog.showModal();
+    conversationTitleInput.focus();
+    conversationTitleInput.select();
+  });
+}
+
+function handleConversationDialogSubmit(event) {
+  event.preventDefault();
+  const action = event.submitter?.value || "confirm";
+  conversationDialog.close(action);
+}
+
+conversationDialog.addEventListener("close", () => {
+  const resolve = conversationDialog._resolve;
+  if (!resolve) return;
+  conversationDialog._resolve = null;
+  if (conversationDialog.returnValue !== "confirm") {
+    resolve(null);
+    return;
+  }
+  const fallback = conversationDialog.dataset.fallback || "";
+  resolve(conversationTitleInput.value.trim() || fallback);
+});
 
 function bindModeButtons() {
   const trigger = document.querySelector(".mode-trigger");
@@ -190,6 +422,7 @@ async function uploadQueuedFiles() {
     });
     setUploadStatus(`${state.activeDocuments.length} tài liệu đang được dùng để chat.`);
     renderActiveDocuments();
+    syncActiveConversationDocuments();
     loadDocuments();
   } catch (error) {
     pendingFiles.forEach((item) => { item.status = "error"; });
@@ -246,7 +479,7 @@ async function submitQuestion() {
   addUserMessage(query);
   queryInput.value = "";
   resizeQueryInput();
-  setChatState(state.mode === "deep" ? "Đang lập kế hoạch và truy xuất" : "Đang truy xuất");
+  setChatState(state.mode === "deep" ? "Đang lập kế hoạch trả lời" : "Đang trả lời");
 
   const pending = addAssistantMessage("");
   pending.bubble.classList.add("is-pending");
@@ -258,6 +491,7 @@ async function submitQuestion() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         query,
+        session_id: state.sessionId,
         top_k: 5,
         document_ids: state.activeDocuments.map((doc) => doc.document_id),
         mode: state.mode,
@@ -269,15 +503,19 @@ async function submitQuestion() {
     pending.bubble.classList.remove("is-pending");
     pending.bubble.innerHTML = "";
     appendAssistantContent(pending.bubble, result.answer || "Chưa có câu trả lời.");
-    appendInlineSources(pending.bubble, result);
-    renderEvidence(result);
-    setChatState(result.warnings?.length ? "Cần kiểm tra nguồn" : "Đã trả lời");
+    if (result.conversation) {
+      state.conversationKnown = true;
+      upsertConversation(result.conversation);
+      renderConversations();
+    } else {
+      loadConversations({ openCurrent: false });
+    }
+    setChatState(result.warnings?.length ? "Đã trả lời, có cảnh báo" : "Đã trả lời");
   } catch (error) {
     pending.bubble.classList.remove("is-pending");
     pending.bubble.textContent = error.message;
     pending.bubble.classList.add("error-message");
     setChatState("Có lỗi");
-    clearEvidence();
   }
 
   scrollMessagesToBottom();
@@ -311,6 +549,92 @@ function renderDocumentLibrary() {
   });
 }
 
+function renderConversations() {
+  const visible = state.historyExpanded ? state.conversations : state.conversations.slice(0, 5);
+  conversationList.innerHTML = "";
+
+  if (!visible.length) {
+    conversationList.innerHTML = '<div class="conversation-empty">Chưa có đoạn chat nào.</div>';
+  } else {
+    visible.forEach((conversation) => {
+      conversationList.appendChild(conversationNode(conversation));
+    });
+  }
+
+  const hiddenCount = Math.max(0, state.conversations.length - 5);
+  conversationExpand.hidden = hiddenCount === 0;
+  conversationExpand.textContent = state.historyExpanded
+    ? "Thu gọn ↑"
+    : `Mở rộng ${hiddenCount} ↓`;
+}
+
+function conversationNode(conversation) {
+  const row = document.createElement("div");
+  row.className = `conversation-item${conversation.sessionId === state.sessionId ? " is-active" : ""}`;
+
+  const open = document.createElement("button");
+  open.className = "conversation-open";
+  open.type = "button";
+  open.addEventListener("click", () => loadConversation(conversation.sessionId));
+
+  const dot = document.createElement("span");
+  dot.className = "conversation-active-dot";
+  dot.setAttribute("aria-hidden", "true");
+  const copy = document.createElement("span");
+  copy.className = "conversation-copy";
+  const title = document.createElement("span");
+  title.className = "conversation-title";
+  title.title = conversation.title || conversation.sessionId;
+  title.textContent = conversation.title || `TB ${conversation.sessionId}`;
+  const meta = document.createElement("span");
+  meta.className = "conversation-meta";
+  meta.textContent = formatConversationTime(conversation.updatedAt);
+  copy.append(title, meta);
+  open.append(dot, copy);
+
+  const menuButton = document.createElement("button");
+  menuButton.className = "conversation-menu-button";
+  menuButton.type = "button";
+  menuButton.title = "Tùy chọn";
+  menuButton.setAttribute("aria-label", "Tùy chọn đoạn chat");
+  menuButton.textContent = "⋯";
+
+  const menu = document.createElement("div");
+  menu.className = "conversation-menu";
+  menu.hidden = true;
+  const rename = document.createElement("button");
+  rename.type = "button";
+  rename.innerHTML = '<span aria-hidden="true">✎</span> Đổi tên';
+  rename.addEventListener("click", () => {
+    menu.hidden = true;
+    renameConversation(conversation);
+  });
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "is-danger";
+  remove.innerHTML = '<span aria-hidden="true">×</span> Xóa';
+  remove.addEventListener("click", () => {
+    menu.hidden = true;
+    deleteConversation(conversation);
+  });
+  menu.append(rename, remove);
+
+  menuButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closeConversationMenus(menu);
+    menu.hidden = !menu.hidden;
+  });
+
+  row.append(open, menuButton, menu);
+  return row;
+}
+
+function closeConversationMenus(exceptMenu = null) {
+  document.querySelectorAll(".conversation-menu").forEach((menu) => {
+    if (menu !== exceptMenu) menu.hidden = true;
+  });
+}
+
 function storedDocumentNode(doc) {
   const selected = isActiveDocument(doc.document_id);
   const node = document.createElement("button");
@@ -341,11 +665,13 @@ function storedDocumentNode(doc) {
 function toggleStoredDocument(doc) {
   if (isActiveDocument(doc.document_id)) {
     removeActiveDocument(doc.document_id, false);
+    return;
   } else {
     upsertActiveDocument(doc);
     renderActiveDocuments();
   }
   renderDocumentLibrary();
+  syncActiveConversationDocuments();
 }
 
 function fileItemNode(item) {
@@ -388,6 +714,7 @@ function removeFile(id) {
   renderFiles();
   renderActiveDocuments();
   renderDocumentLibrary();
+  if (removed?.document?.document_id) syncActiveConversationDocuments();
   setUploadStatus("");
 }
 
@@ -447,6 +774,7 @@ function removeActiveDocument(documentId, removeUploadedFile = true) {
   renderFiles();
   renderActiveDocuments();
   renderDocumentLibrary();
+  syncActiveConversationDocuments();
 }
 
 function appendAssistantContent(bubble, text) {
@@ -459,100 +787,9 @@ function appendAssistantContent(bubble, text) {
   bubble.append(kicker, answer);
 }
 
-function appendInlineSources(bubble, result) {
-  const evidence = responseEvidence(result);
-  const fileNames = [...new Set(
-    evidence
-      .map((source) => source.file_name || source.fileName)
-      .filter(Boolean),
-  )];
-  if (!fileNames.length) return;
-
-  const wrapper = document.createElement("div");
-  wrapper.className = "inline-sources";
-  fileNames.forEach((fileName) => {
-    const chip = document.createElement("span");
-    chip.className = "source-chip";
-    chip.textContent = fileName;
-    wrapper.appendChild(chip);
-  });
-  bubble.appendChild(wrapper);
-}
-
-function renderEvidence(result) {
-  const evidence = responseEvidence(result);
-  evidenceCount.textContent = evidence.length;
-  evidenceSummary.textContent = evidenceSummaryText(result, evidence);
-  evidenceList.innerHTML = "";
-
-  if (!evidence.length) {
-    evidenceList.innerHTML = '<div class="evidence-empty"><span class="evidence-empty-icon" aria-hidden="true">⌕</span><p>Chưa có đoạn trích đủ phù hợp để hiển thị.</p></div>';
-    return;
-  }
-
-  evidence.forEach((chunk, index) => {
-    const metadata = chunk.metadata || {};
-    const fileName = chunk.fileName || chunk.file_name || "Tài liệu";
-    const pageStart = chunk.pageStart ?? metadata.page_start;
-    const pageEnd = chunk.pageEnd ?? metadata.page_end;
-    const card = document.createElement("article");
-    card.className = "evidence-card";
-
-    const header = document.createElement("div");
-    header.className = "evidence-card-header";
-    const rank = document.createElement("span");
-    rank.className = "evidence-rank";
-    rank.textContent = `#${index + 1}`;
-    const source = document.createElement("div");
-    source.className = "evidence-source";
-    const file = document.createElement("span");
-    file.className = "evidence-file";
-    file.title = fileName;
-    file.textContent = fileName;
-    const page = document.createElement("span");
-    page.className = "evidence-page";
-    page.textContent = pageLabel(pageStart, pageEnd);
-    source.append(file, page);
-    header.append(rank, source);
-
-    if (typeof chunk.score === "number") {
-      const score = document.createElement("span");
-      score.className = "evidence-score";
-      score.textContent = `score ${chunk.score.toFixed(3)}`;
-      header.appendChild(score);
-    }
-
-    const text = document.createElement("p");
-    text.className = "evidence-text";
-    text.textContent = chunk.text || chunk.content || "Không có nội dung đoạn trích.";
-    card.append(header, text);
-    evidenceList.appendChild(card);
-  });
-  evidenceList.scrollTop = 0;
-}
-
-function responseEvidence(result) {
-  return [result.evidence, result.usedEvidence, result.citations].find(Array.isArray) || [];
-}
-
-function evidenceSummaryText(result, evidence) {
-  if (!evidence.length) return "Không tìm thấy evidence phù hợp";
-  const subQueryCount = result.deepSearch?.subQueries?.length;
-  if (result.mode === "deep" && subQueryCount) {
-    return `${evidence.length} đoạn từ ${subQueryCount} sub-query`;
-  }
-  return `${evidence.length} đoạn được dùng cho câu trả lời`;
-}
-
 function pendingMessage() {
-  if (state.mode === "deep") return "Đang lập kế hoạch sub-query và tìm evidence";
-  return `Đang tìm evidence (${MODE_LABELS[state.mode] || "Fast"})`;
-}
-
-function clearEvidence() {
-  evidenceCount.textContent = "0";
-  evidenceSummary.textContent = "Bằng chứng cho câu trả lời mới nhất";
-  evidenceList.innerHTML = '<div class="evidence-empty"><span class="evidence-empty-icon" aria-hidden="true">⌕</span><p>Evidence sẽ xuất hiện sau câu hỏi đầu tiên.</p></div>';
+  if (state.mode === "deep") return "Đang lập kế hoạch sub-query và tổng hợp câu trả lời";
+  return `Đang trả lời (${MODE_LABELS[state.mode] || "Fast"})`;
 }
 
 function addUserMessage(text) {
@@ -703,6 +940,11 @@ function setDocumentStatus(text, isError = false) {
   documentStatus.classList.toggle("is-error", isError);
 }
 
+function setConversationStatus(text, isError = false) {
+  conversationStatus.textContent = text;
+  conversationStatus.classList.toggle("is-error", isError);
+}
+
 function setChatState(text) {
   chatState.textContent = text;
 }
@@ -736,8 +978,26 @@ function formatUpdatedAt(value) {
   return `Cập nhật ${date.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}`;
 }
 
-function pageLabel(start, end) {
-  if (start && end && start !== end) return `Trang ${start}-${end}`;
-  if (start) return `Trang ${start}`;
-  return "Trang chưa xác định";
+function formatConversationTime(value) {
+  if (!value) return "Chưa có hoạt động";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).split("T")[0];
+  return date.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" });
+}
+
+function getOrCreateSessionId() {
+  const existing = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (existing) return existing;
+  return resetSessionId();
+}
+
+function resetSessionId() {
+  const id = randomSessionId();
+  localStorage.setItem(SESSION_STORAGE_KEY, id);
+  return id;
+}
+
+function randomSessionId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }

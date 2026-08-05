@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#eef3f1" />
     <title>Chat With TB</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260718-2" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260805-1" />
   </head>
   <body>
     <div class="app-frame">
@@ -20,14 +20,13 @@
 
         <div class="topbar-actions">
           <span class="system-status"><span class="status-dot"></span>RAG modes ready</span>
-          <button id="new-chat" class="button button-secondary" type="button">
-            <span class="button-icon" aria-hidden="true">+</span>
-            Cuộc chat mới
+          <button id="history-toggle" class="icon-button topbar-icon-button" type="button" aria-label="Mở lịch sử hội thoại" title="Lịch sử hội thoại" aria-expanded="false">
+            <span aria-hidden="true">☰</span>
           </button>
         </div>
       </header>
 
-      <main class="workspace">
+      <main id="workspace" class="workspace">
         <aside class="panel source-panel" aria-labelledby="source-title">
           <div class="panel-header source-header">
             <div>
@@ -107,7 +106,7 @@
               <div class="mode-selector">
                 <button class="mode-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
                   <span class="mode-label">Fast</span>
-                  <span class="mode-caret" aria-hidden="true">&#8964;</span>
+                  <span class="mode-caret" aria-hidden="true">▾</span>
                 </button>
                 <ul class="mode-dropdown" role="listbox" aria-label="Chế độ tìm kiếm" hidden>
                   <li class="mode-option is-selected" role="option" data-mode="fast">Fast</li>
@@ -119,34 +118,45 @@
                 Gửi <span aria-hidden="true">→</span>
               </button>
             </form>
-            <div class="composer-note">Thông tin trả lời được đối chiếu từ các đoạn trích bên phải.</div>
+            <div class="composer-note">Phạm vi trả lời theo tài liệu đang chọn.</div>
           </div>
           <input id="composer-files" type="file" accept="application/pdf" multiple hidden />
         </section>
 
-        <aside class="panel evidence-panel" aria-labelledby="evidence-title">
-          <div class="panel-header evidence-header">
+        <aside id="history-panel" class="panel history-panel" aria-labelledby="history-title" hidden>
+          <div class="panel-header history-header">
             <div>
-              <span class="panel-eyebrow">TRUY XUẤT</span>
-              <h2 id="evidence-title">Evidence</h2>
+              <span class="panel-eyebrow">LỊCH SỬ</span>
+              <h2 id="history-title">Hội thoại</h2>
             </div>
-            <span id="evidence-count" class="count-badge count-badge-light">0</span>
           </div>
 
-          <div class="evidence-intro">
-            <span class="evidence-pulse"></span>
-            <span id="evidence-summary">Bằng chứng cho câu trả lời mới nhất</span>
-          </div>
-          <div id="evidence-list" class="evidence-list" aria-live="polite">
-            <div class="evidence-empty">
-              <span class="evidence-empty-icon" aria-hidden="true">⌕</span>
-              <p>Evidence sẽ xuất hiện sau câu hỏi đầu tiên.</p>
-            </div>
+          <div class="history-content">
+            <button id="new-chat" class="history-new-chat" type="button">
+              <span class="history-new-icon" aria-hidden="true">+</span>
+              <span>Đoạn chat mới</span>
+            </button>
+
+            <div class="history-section-title">Gần đây</div>
+            <div id="conversation-list" class="conversation-list" aria-live="polite"></div>
+            <button id="conversation-expand" class="tiny-button conversation-expand" type="button" hidden>Mở rộng ↓</button>
+            <div id="conversation-status" class="inline-status" aria-live="polite"></div>
           </div>
         </aside>
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260718-2"></script>
+    <dialog id="conversation-dialog" class="conversation-dialog">
+      <form id="conversation-dialog-form" class="conversation-dialog-card" method="dialog">
+        <h2 id="conversation-dialog-title">Đặt tên đoạn chat</h2>
+        <input id="conversation-title-input" class="conversation-title-input" type="text" autocomplete="off" maxlength="120" placeholder="TB sessionID" />
+        <div class="conversation-dialog-actions">
+          <button class="button button-secondary" type="submit" value="cancel">Hủy</button>
+          <button class="button button-primary dialog-confirm" type="submit" value="confirm">OK</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/static/app.js?v=20260805-1"></script>
   </body>
 </html>

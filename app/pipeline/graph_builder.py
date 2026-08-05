@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.extraction.community_builder import CommunityBuilder
 from app.extraction.entity_extractor import EntityExtractor
 from app.graph.neo4j_store import Neo4jGraphStore
-from app.providers.embedding import EmbeddingService
+from app.providers.embedding import EmbeddingService, get_embedding_service
 
 
 class GraphBuilder:
@@ -23,7 +23,7 @@ class GraphBuilder:
     def from_config(cls) -> "GraphBuilder":
         from app.providers.litellm_client import LiteLLMClient
         graph_store = Neo4jGraphStore.from_config()
-        embedding_service = EmbeddingService()
+        embedding_service = get_embedding_service()
         llm_client = LiteLLMClient()
         return cls(
             graph_store=graph_store,

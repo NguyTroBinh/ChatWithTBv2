@@ -7,7 +7,7 @@ from app.core.config import (
     ENTITY_VECTOR_INDEX,
 )
 from app.graph.neo4j_store import Neo4jGraphStore
-from app.providers.embedding import EmbeddingService
+from app.providers.embedding import EmbeddingService, get_embedding_service
 from app.retrieval.naive import NaiveRetrievalService
 
 
@@ -36,7 +36,7 @@ class LocalRetrievalService:
     def from_config(cls) -> "LocalRetrievalService":
         return cls(
             graph_store=Neo4jGraphStore.from_config(),
-            embedding_service=EmbeddingService(),
+            embedding_service=get_embedding_service(),
         )
 
     def close(self) -> None:

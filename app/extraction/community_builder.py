@@ -3,7 +3,7 @@ import hashlib
 from pathlib import Path
 
 from app.graph.neo4j_store import Neo4jGraphStore
-from app.providers.embedding import EmbeddingService
+from app.providers.embedding import EmbeddingService, get_embedding_service
 from app.providers.litellm_client import LiteLLMClient
 
 _PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "community_summary.vi.md"
@@ -25,7 +25,7 @@ class CommunityBuilder:
     def from_config(cls) -> "CommunityBuilder":
         return cls(
             graph_store=Neo4jGraphStore.from_config(),
-            embedding_service=EmbeddingService(),
+            embedding_service=get_embedding_service(),
             llm_client=LiteLLMClient(),
         )
 
