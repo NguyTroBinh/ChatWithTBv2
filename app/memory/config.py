@@ -9,6 +9,7 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD") or None
 REDIS_MAX_MESSAGES = int(os.getenv("REDIS_MAX_MESSAGES", "50"))
+LIMIT_MESSAGES = int(os.getenv("LIMIT_MESSAGES", "10"))
 
 # Long-term memory (Neo4j)
 MEMORY_VECTOR_INDEX = os.getenv("MEMORY_VECTOR_INDEX", "memory_embedding")

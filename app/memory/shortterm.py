@@ -2,7 +2,7 @@ import json
 import time
 from datetime import datetime, timezone
 
-from app.memory.config import REDIS_DB, REDIS_HOST, REDIS_MAX_MESSAGES, REDIS_PASSWORD, REDIS_PORT
+from app.memory.config import REDIS_DB, REDIS_HOST, REDIS_MAX_MESSAGES, REDIS_PASSWORD, REDIS_PORT, LIMIT_MESSAGES
 
 
 class ShortTermMemoryService:
@@ -13,6 +13,7 @@ class ShortTermMemoryService:
         db=REDIS_DB,
         password=REDIS_PASSWORD,
         max_message=REDIS_MAX_MESSAGES,
+        limit_message=LIMIT_MESSAGES,
     ):
         try:
             import redis
@@ -29,6 +30,7 @@ class ShortTermMemoryService:
             socket_connect_timeout=5,
         )
         self.max_msg = max_message
+        self.limit_msg = limit_message
 
     def _generate_key(self, session_id):
         return f"chat_history:{session_id}"
@@ -47,7 +49,7 @@ class ShortTermMemoryService:
             self.redis_client.ltrim(key, -self.max_msg, -1)
 
     def get_history(self, session_id, limit=None):
-        limit = self.max_msg if limit is None else int(limit)
+        limit = self.limit_msg if limit is None else int(limit)
         key = self._generate_key(session_id)
         raw_history = self.redis_client.lrange(key, -limit, -1)
         return [json.loads(msg) for msg in raw_history]
