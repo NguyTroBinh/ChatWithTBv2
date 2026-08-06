@@ -76,6 +76,10 @@ Neo4j stores `Document`, `Chunk`, `Entity`, and `Community` nodes. The system cr
 
 All chat modes are document-scoped: retrieval only runs within the active uploaded/selected documents.
 
+### Context Compression
+
+Headroom TextCrusher selectively compresses long chunk, short-term memory, and long-term memory context before it is sent to the LLM. The user query, system prompt, and citation metadata are preserved. This feature is disabled by default; enable it in `.env` with `CONTEXT_COMPRESSION_ENABLED=true`.
+
 ### Memory
 
 - **Short-term memory**: Redis stores the latest 50 messages per `session_id` and conversation metadata such as title, document scope, created time, and updated time.

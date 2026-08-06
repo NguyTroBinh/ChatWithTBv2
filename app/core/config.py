@@ -3,6 +3,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def _env_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
 # EMBEDDING_MODEL
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "AITeamVN/Vietnamese_Embedding")
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", "models_cache")
@@ -31,5 +34,13 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "1"))
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "4096"))
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "120"))
-LLM_THINK = os.getenv("LLM_THINK", "false").strip().lower() in {"1", "true", "yes", "on"}
+LLM_THINK = _env_bool("LLM_THINK")
 LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "").strip().lower()
+
+# Context compression
+CONTEXT_COMPRESSION_ENABLED = _env_bool("CONTEXT_COMPRESSION_ENABLED")
+CONTEXT_COMPRESSION_MIN_TOKENS = int(os.getenv("CONTEXT_COMPRESSION_MIN_TOKENS", "800"))
+CONTEXT_COMPRESSION_TARGET_RATIO = float(os.getenv("CONTEXT_COMPRESSION_TARGET_RATIO", "0.65"))
+CONTEXT_COMPRESSION_COMPRESS_HISTORY = _env_bool("CONTEXT_COMPRESSION_COMPRESS_HISTORY", "true")
+CONTEXT_COMPRESSION_COMPRESS_LONG_MEMORY = _env_bool("CONTEXT_COMPRESSION_COMPRESS_LONG_MEMORY", "true")
+CONTEXT_COMPRESSION_COMPRESS_CHUNKS = _env_bool("CONTEXT_COMPRESSION_COMPRESS_CHUNKS", "true")

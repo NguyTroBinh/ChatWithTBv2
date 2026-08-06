@@ -7,6 +7,7 @@ sentence_transformers==5.6.0
 sentencepiece==0.2.2
 neo4j==6.2.0
 litellm==1.91.0
+headroom-ai==0.34.0
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-multipart>=0.0.9

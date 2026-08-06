@@ -16,7 +16,7 @@ venv/
 
 
 # Test/build/cache output
-tests
+tests/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -48,4 +48,3 @@ Thumbs.db
 AGENTS.md
 plan-rag.md
 report-rag.txt
-
